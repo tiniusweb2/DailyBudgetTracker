@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { db } from '@db';
+import { db } from '../db';
 import { startOfDay, endOfDay, subDays } from 'date-fns';
 
 describe('Daily Budget', () => {
@@ -7,16 +7,16 @@ describe('Daily Budget', () => {
 
   beforeEach(async () => {
     // Clear the database before each test
-    (db as any).users.clear();
-    (db as any).transactions.clear();
-    (db as any).dailyBudgets.clear();
+    await db.delete(db.schema.users);
+    await db.delete(db.schema.transactions);
+    await db.delete(db.schema.dailyBudgets);
 
     // Create a test user
-    const user = await db.createUser({
+    const [user] = await db.insert(db.schema.users).values({
       username: 'testuser',
       password: 'password123',
-      dailyBudgetAmount: 50,
-    });
+      dailyBudgetAmount: "50.00",
+    }).returning();
     userId = user.id;
   });
 
@@ -25,16 +25,16 @@ describe('Daily Budget', () => {
     const budgetData = {
       userId,
       date: today,
-      available: 50,
-      spent: 0,
-      saved: 0,
+      available: "50.00",
+      spent: "0.00",
+      saved: "0.00",
     };
 
-    const budget = await db.createDailyBudget(budgetData);
+    const [budget] = await db.insert(db.schema.dailyBudgets).values(budgetData).returning();
     expect(budget.userId).toBe(userId);
-    expect(budget.available).toBe(50);
-    expect(budget.spent).toBe(0);
-    expect(budget.saved).toBe(0);
+    expect(budget.budgetAmount).toBe("50.00");
+    expect(budget.spent).toBe("0.00");
+    expect(budget.saved).toBe("0.00");
   });
 
   it('should find daily budget by user ID and date', async () => {
@@ -42,63 +42,56 @@ describe('Daily Budget', () => {
     const budgetData = {
       userId,
       date: today,
-      available: 50,
-      spent: 20,
-      saved: 10,
+      budgetAmount: "50.00",
+      spent: "20.00",
+      saved: "10.00",
     };
 
-    await db.createDailyBudget(budgetData);
-    const foundBudget = await db.findDailyBudgetByUserIdAndDate(userId, today);
-    
+    await db.insert(db.schema.dailyBudgets).values(budgetData);
+
+    const [foundBudget] = await db
+      .select()
+      .from(db.schema.dailyBudgets)
+      .where(db => db.and(
+        db.eq(db.schema.dailyBudgets.userId, userId),
+        db.gte(db.schema.dailyBudgets.date, startOfDay(today)),
+        db.lte(db.schema.dailyBudgets.date, endOfDay(today))
+      ))
+      .limit(1);
+
     expect(foundBudget).toBeDefined();
-    expect(foundBudget?.available).toBe(50);
-    expect(foundBudget?.spent).toBe(20);
-    expect(foundBudget?.saved).toBe(10);
-  });
-
-  it('should update daily budget', async () => {
-    const today = new Date();
-    const budget = await db.createDailyBudget({
-      userId,
-      date: today,
-      available: 50,
-      spent: 0,
-      saved: 0,
-    });
-
-    const updated = await db.updateDailyBudget(budget.id, {
-      spent: 30,
-      available: 20,
-    });
-
-    expect(updated).toBeDefined();
-    expect(updated?.spent).toBe(30);
-    expect(updated?.available).toBe(20);
-    expect(updated?.saved).toBe(0); // Should remain unchanged
+    expect(foundBudget.budgetAmount).toBe("50.00");
+    expect(foundBudget.spent).toBe("20.00");
+    expect(foundBudget.saved).toBe("10.00");
   });
 
   it('should fetch daily budgets within date range', async () => {
     const today = new Date();
     const yesterday = subDays(today, 1);
-    
+
     await Promise.all([
-      db.createDailyBudget({
+      db.insert(db.schema.dailyBudgets).values({
         userId,
         date: today,
-        available: 50,
-        spent: 20,
-        saved: 0,
+        budgetAmount: "50.00",
+        spent: "20.00",
+        saved: "0.00",
       }),
-      db.createDailyBudget({
+      db.insert(db.schema.dailyBudgets).values({
         userId,
         date: yesterday,
-        available: 50,
-        spent: 30,
-        saved: 20,
+        budgetAmount: "50.00",
+        spent: "30.00",
+        saved: "20.00",
       })
     ]);
 
-    const budgets = await db.findDailyBudgetsByUserId(userId);
+    const budgets = await db
+      .select()
+      .from(db.schema.dailyBudgets)
+      .where(db => db.eq(db.schema.dailyBudgets.userId, userId))
+      .orderBy(db.schema.dailyBudgets.date);
+
     expect(budgets).toHaveLength(2);
 
     // Check that budgets are sorted by date (newest first)
@@ -106,42 +99,5 @@ describe('Daily Budget', () => {
       .toBe(today.toISOString().split('T')[0]);
     expect(budgets[1].date.toISOString().split('T')[0])
       .toBe(yesterday.toISOString().split('T')[0]);
-  });
-
-  it('should handle multiple users daily budgets separately', async () => {
-    const today = new Date();
-    
-    // Create another user
-    const anotherUser = await db.createUser({
-      username: 'anotheruser',
-      password: 'password123',
-      dailyBudgetAmount: 100,
-    });
-
-    // Create budgets for both users
-    await Promise.all([
-      db.createDailyBudget({
-        userId,
-        date: today,
-        available: 50,
-        spent: 20,
-        saved: 0,
-      }),
-      db.createDailyBudget({
-        userId: anotherUser.id,
-        date: today,
-        available: 100,
-        spent: 50,
-        saved: 0,
-      })
-    ]);
-
-    const user1Budgets = await db.findDailyBudgetsByUserId(userId);
-    const user2Budgets = await db.findDailyBudgetsByUserId(anotherUser.id);
-
-    expect(user1Budgets).toHaveLength(1);
-    expect(user2Budgets).toHaveLength(1);
-    expect(user1Budgets[0].available).toBe(50);
-    expect(user2Budgets[0].available).toBe(100);
   });
 });

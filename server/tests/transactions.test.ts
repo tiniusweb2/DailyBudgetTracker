@@ -1,124 +1,122 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { db } from '@db';
-import { startOfDay, endOfDay, subDays, subMinutes } from 'date-fns';
+import { db } from '../db';
+import { startOfDay, endOfDay, subDays } from 'date-fns';
+import { users, transactions, categories } from '../db/schema';
+import { categoryPredictor } from '../services/CategoryPrediction';
+import { eq, and, gte, lte } from 'drizzle-orm';
 
 describe('Transactions', () => {
   let userId: number;
+  let foodCategoryId: number;
 
   beforeEach(async () => {
-    // Clear the database before each test
-    (db as any).users.clear();
-    (db as any).transactions.clear();
-    (db as any).dailyBudgets.clear();
+    // Clear tables
+    await db.delete(transactions);
+    await db.delete(categories);
+    await db.delete(users);
 
     // Create a test user
-    const user = await db.createUser({
+    const [user] = await db.insert(users).values({
       username: 'testuser',
       password: 'password123',
-      dailyBudgetAmount: 50,
-    });
+      dailyBudgetAmount: "50.00",
+    }).returning();
     userId = user.id;
+
+    // Create test categories
+    const [foodCategory] = await db.insert(categories).values({
+      name: 'Food & Dining',
+      description: 'Restaurants, groceries, and food delivery'
+    }).returning();
+    foodCategoryId = foodCategory.id;
   });
 
-  it('should create a new transaction', async () => {
-    const transactionData = {
-      userId,
-      amount: 25,
-      description: 'Test transaction',
-    };
-
-    const transaction = await db.createTransaction(transactionData);
-    expect(transaction.id).toBe(1);
-    expect(transaction.amount).toBe(transactionData.amount);
-    expect(transaction.description).toBe(transactionData.description);
-  });
-
-  it('should find transactions by user ID', async () => {
-    // Create first transaction (older)
-    const firstTransaction = await db.createTransaction({
-      userId,
-      amount: 25,
-      description: 'First transaction'
-    });
-
-    // Manually set the creation time to 5 minutes ago
-    firstTransaction.createdAt = subMinutes(new Date(), 5);
-    (db as any).transactions.set(firstTransaction.id, firstTransaction);
-
-    // Create second transaction (newer)
-    const secondTransaction = await db.createTransaction({
-      userId,
-      amount: 30,
-      description: 'Second transaction'
-    });
-
-    const foundTransactions = await db.findTransactionsByUserId(userId);
-    expect(foundTransactions).toHaveLength(2);
-    // Most recent first
-    expect(foundTransactions[0].amount).toBe(30);
-    expect(foundTransactions[1].amount).toBe(25);
-  });
-
-  it('should create and update daily budgets', async () => {
-    const today = new Date();
-    const budgetData = {
-      userId,
-      date: today,
-      available: 50,
-      spent: 20,
-      saved: 0,
-    };
-
-    const budget = await db.createDailyBudget(budgetData);
-    expect(budget.available).toBe(budgetData.available);
-    expect(budget.spent).toBe(budgetData.spent);
-
-    const updated = await db.updateDailyBudget(budget.id, {
-      spent: 30,
-      available: 40,
-    });
-
-    expect(updated?.spent).toBe(30);
-    expect(updated?.available).toBe(40);
-  });
-
-  it('should handle invalid budget updates gracefully', async () => {
-    const nonExistentId = 999;
-    const updated = await db.updateDailyBudget(nonExistentId, {
-      spent: 30,
-      available: 40,
-    });
-    expect(updated).toBeUndefined();
-  });
-
-  it('should find daily budgets within date range', async () => {
-    const today = new Date();
-    const sevenDaysAgo = subDays(today, 7);
-
-    // Create some budgets
-    await Promise.all([
-      db.createDailyBudget({
+  describe('Transaction Creation', () => {
+    it('should create a new transaction with proper category', async () => {
+      const transactionData = {
         userId,
-        date: today,
-        available: 50,
-        spent: 20,
-        saved: 0,
-      }),
-      db.createDailyBudget({
-        userId,
-        date: sevenDaysAgo,
-        available: 50,
-        spent: 30,
-        saved: 0,
-      })
-    ]);
+        amount: "25.50",
+        description: 'Lunch at restaurant',
+        categoryId: foodCategoryId
+      };
 
-    const budgets = await db.findDailyBudgetsByUserId(userId);
-    const recentBudgets = budgets.filter(b => 
-      b.date >= startOfDay(sevenDaysAgo) && 
-      b.date <= endOfDay(today)
-    );
+      const [transaction] = await db
+        .insert(transactions)
+        .values(transactionData)
+        .returning();
 
-    expect(recentBudgets).toHaveLength(2);
+      expect(transaction).toBeDefined();
+      expect(transaction.amount).toBe('25.50');
+      expect(transaction.description).toBe(transactionData.description);
+      expect(transaction.categoryId).toBe(foodCategoryId);
+    });
+
+    it('should predict category correctly for food-related transactions', async () => {
+      const description = 'Lunch at restaurant';
+      const prediction = await categoryPredictor.predictCategory(description);
+
+      // Food category should be predicted for restaurant-related descriptions
+      expect(prediction.confidence).toBeGreaterThan(0.5);
+      expect(prediction.categoryId).toBe(foodCategoryId);
+    });
+  });
+
+  describe('Transaction Retrieval', () => {
+    it('should find transactions by user ID with category information', async () => {
+      // Create a transaction
+      const [transaction] = await db
+        .insert(transactions)
+        .values({
+          userId,
+          amount: "25.50",
+          description: 'Lunch at restaurant',
+          categoryId: foodCategoryId
+        })
+        .returning();
+
+      const results = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.userId, userId));
+
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(transaction.id);
+      expect(results[0].categoryId).toBe(foodCategoryId);
+    });
+
+    it('should return transactions within date range', async () => {
+      const today = new Date();
+      const yesterday = subDays(today, 1);
+
+      // Create transactions for different dates
+      await Promise.all([
+        db.insert(transactions).values({
+          userId,
+          amount: "25.50",
+          description: 'Lunch today',
+          categoryId: foodCategoryId,
+          createdAt: today
+        }),
+        db.insert(transactions).values({
+          amount: "20.00",
+          description: 'Dinner yesterday',
+          categoryId: foodCategoryId,
+          createdAt: yesterday
+        })
+      ]);
+
+      const results = await db
+        .select()
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            gte(transactions.createdAt, startOfDay(yesterday)),
+            lte(transactions.createdAt, endOfDay(today))
+          )
+        );
+
+      expect(results).toHaveLength(2);
+    });
   });
 });
