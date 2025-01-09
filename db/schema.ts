@@ -12,15 +12,15 @@ export const users = pgTable("users", {
 
 export const categories = pgTable("categories", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").references(() => users.id).notNull(),
   name: text("name").notNull(),
-  color: text("color").notNull().default('#6366f1'), // Default indigo color
+  color: text("color").notNull().default('#6366f1'),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const transactions = pgTable("transactions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").references(() => users.id).notNull(),
   categoryId: integer("category_id").references(() => categories.id),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   description: text("description").notNull(),
@@ -29,7 +29,7 @@ export const transactions = pgTable("transactions", {
 
 export const dailyBudgets = pgTable("daily_budgets", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: integer("user_id").references(() => users.id),
+  userId: integer("user_id").references(() => users.id).notNull(),
   date: date("date").notNull(),
   available: decimal("available", { precision: 10, scale: 2 }).notNull(),
   spent: decimal("spent", { precision: 10, scale: 2 }).notNull(),
@@ -37,18 +37,18 @@ export const dailyBudgets = pgTable("daily_budgets", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Relations
 export const usersRelations = relations(users, ({ many }) => ({
   transactions: many(transactions),
   dailyBudgets: many(dailyBudgets),
   categories: many(categories),
 }));
 
-export const categoriesRelations = relations(categories, ({ one, many }) => ({
+export const categoriesRelations = relations(categories, ({ one }) => ({
   user: one(users, {
     fields: [categories.userId],
     references: [users.id],
   }),
-  transactions: many(transactions),
 }));
 
 export const transactionsRelations = relations(transactions, ({ one }) => ({
@@ -62,15 +62,25 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   }),
 }));
 
-export const insertUserSchema = createInsertSchema(users);
-export const selectUserSchema = createSelectSchema(users);
-export const insertCategorySchema = createInsertSchema(categories);
-export const selectCategorySchema = createSelectSchema(categories);
+export const dailyBudgetsRelations = relations(dailyBudgets, ({ one }) => ({
+  user: one(users, {
+    fields: [dailyBudgets.userId],
+    references: [users.id],
+  }),
+}));
 
+// Schemas for validation
+export const insertUserSchema = createInsertSchema(users, {
+  id: undefined,
+  createdAt: undefined,
+});
+export const selectUserSchema = createSelectSchema(users);
+
+// Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Category = typeof categories.$inferSelect;
 export type InsertCategory = typeof categories.$inferInsert;
-export type SelectUser = Omit<User, "password">;
 export type Transaction = typeof transactions.$inferSelect;
 export type DailyBudget = typeof dailyBudgets.$inferSelect;
+export type SelectUser = Omit<User, "password">;
