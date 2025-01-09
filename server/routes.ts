@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { DrizzleTransactionRepository } from "./data/repositories/TransactionRepository";
 import { DrizzleUserRepository } from "./data/repositories/UserRepository";
+import { DrizzleDailyBudgetRepository } from "./data/repositories/DailyBudgetRepository";
 import { startOfDay, endOfDay, subDays } from "date-fns";
 import { AppError } from "./domain/errors/AppError";
 
@@ -10,6 +11,7 @@ export function registerRoutes(app: Express): Server {
   // Initialize repositories
   const transactionRepo = new DrizzleTransactionRepository();
   const userRepo = new DrizzleUserRepository();
+  const dailyBudgetRepo = new DrizzleDailyBudgetRepository();
 
   // Setup authentication routes
   setupAuth(app);
@@ -36,22 +38,23 @@ export function registerRoutes(app: Express): Server {
       );
 
       // Get user's current daily budget
-      const user = await userRepo.findById(req.user!.id);
-      if (!user) {
-        throw AppError.notFound("User not found");
-      }
+      const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
 
-      const todaySpent = recentTransactions
-        .filter(t => t.createdAt >= startOfDay(today))
-        .reduce((sum, t) => sum + t.amount, 0);
+      // Get budget history for the last 7 days
+      const dailyBudgets = await dailyBudgetRepo.findByUserId(req.user!.id);
+      const recentBudgets = dailyBudgets.filter(b => 
+        b.date >= startOfDay(sevenDaysAgo) && 
+        b.date <= endOfDay(today)
+      );
 
       res.json({
         transactions: recentTransactions,
         dailyBudget: {
-          available: user.dailyBudgetAmount - todaySpent,
-          spent: todaySpent,
-          saved: 0 // To be implemented with savings goals feature
-        }
+          available: dailyBudget.budgetAmount - dailyBudget.spent,
+          spent: dailyBudget.spent,
+          saved: dailyBudget.saved
+        },
+        dailyBudgets: recentBudgets
       });
     } catch (error) {
       next(error);
@@ -67,10 +70,17 @@ export function registerRoutes(app: Express): Server {
         throw AppError.badRequest("Invalid transaction data");
       }
 
+      // Create the transaction
       const transaction = await transactionRepo.create({
         userId: req.user!.id,
         amount,
         description
+      });
+
+      // Update daily budget spent amount
+      const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
+      await dailyBudgetRepo.update(dailyBudget.id, {
+        spent: dailyBudget.spent + amount
       });
 
       res.json(transaction);
@@ -92,9 +102,15 @@ export function registerRoutes(app: Express): Server {
         dailyBudgetAmount: amount
       });
 
+      // Update current day's budget amount
+      const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
+      await dailyBudgetRepo.update(dailyBudget.id, {
+        budgetAmount: amount
+      });
+
       res.json({
         message: "Budget updated successfully",
-        dailyBudgetAmount: user.dailyBudgetAmount
+        dailyBudgetAmount: amount
       });
     } catch (error) {
       next(error);

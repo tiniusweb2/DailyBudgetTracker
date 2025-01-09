@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import type { Transaction, DailyBudget } from "@db/schema";
 
+interface DailyBudgetInfo {
+  available: number;
+  spent: number;
+  saved: number;
+}
+
 interface TransactionsResponse {
   transactions: Transaction[];
-  dailyBudget: {
-    available: number;
-    spent: number;
-    saved: number;
-  };
+  dailyBudget: DailyBudgetInfo;
   dailyBudgets: DailyBudget[];
 }
 
@@ -29,7 +31,7 @@ export function useTransactions() {
 
   return {
     transactions: data?.transactions ?? [],
-    dailyBudget: data?.dailyBudget,
+    dailyBudget: data?.dailyBudget ?? { available: 0, spent: 0, saved: 0 },
     dailyBudgets: data?.dailyBudgets ?? [],
     isLoading,
     error,

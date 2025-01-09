@@ -5,15 +5,21 @@ import session from "express-session";
 import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { type User } from "@db/schema";
+import { users } from "@db/schema";
 import { db } from "@db";
+import { eq } from "drizzle-orm";
 import { AppError } from "./domain/errors/AppError";
 
 const scryptAsync = promisify(scrypt);
 
 declare global {
   namespace Express {
-    interface User extends Omit<User, "password"> {}
+    interface User {
+      id: number;
+      username: string;
+      dailyBudgetAmount: number;
+      createdAt: Date;
+    }
   }
 }
 
@@ -44,7 +50,11 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
-        const user = await db.findUserByUsername(username);
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.username, username))
+          .limit(1);
 
         if (!user) {
           return done(null, false, { message: "Incorrect username." });
@@ -69,10 +79,16 @@ export function setupAuth(app: Express) {
 
   passport.deserializeUser(async (id: number, done) => {
     try {
-      const user = await db.findUserById(id);
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1);
+
       if (!user) {
         return done(null, false);
       }
+
       const { password: _, ...userWithoutPassword } = user;
       done(null, userWithoutPassword);
     } catch (err) {
@@ -88,17 +104,25 @@ export function setupAuth(app: Express) {
         throw AppError.badRequest("Username and password are required");
       }
 
-      const existingUser = await db.findUserByUsername(username);
+      const [existingUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
       if (existingUser) {
         throw AppError.badRequest("Username already exists");
       }
 
       const hashedPassword = await hashPassword(password);
-      const user = await db.createUser({
-        username,
-        password: hashedPassword,
-        dailyBudgetAmount: 50.00, // Default daily budget
-      });
+      const [user] = await db
+        .insert(users)
+        .values({
+          username,
+          password: hashedPassword,
+          dailyBudgetAmount: "50.00", // Default daily budget
+        })
+        .returning();
 
       const { password: _, ...userWithoutPassword } = user;
 
