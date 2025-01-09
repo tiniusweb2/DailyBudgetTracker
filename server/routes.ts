@@ -22,8 +22,7 @@ export function registerRoutes(app: Express): Server {
   // Middleware to ensure user is authenticated
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     if (!req.isAuthenticated()) {
-      res.status(401).json({ message: "Not authenticated" });
-      return;
+      return res.status(401).json({ message: "Not authenticated" });
     }
     next();
   };

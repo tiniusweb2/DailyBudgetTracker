@@ -71,10 +71,11 @@ export function setupAuth(app: Express) {
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       httpOnly: true,
-      sameSite: "lax",
+      secure: false, // Set to false for development
+      sameSite: 'lax'
     },
     store: new MemoryStore({
-      checkPeriod: 86400000,
+      checkPeriod: 86400000, // prune expired entries every 24h
     }),
   };
 
@@ -227,6 +228,6 @@ export function setupAuth(app: Express) {
     if (req.isAuthenticated()) {
       return res.json(req.user);
     }
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ message: "Not authenticated" });
   });
 }
