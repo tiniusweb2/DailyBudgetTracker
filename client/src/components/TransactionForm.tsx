@@ -6,14 +6,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
+import { useUser } from "@/hooks/use-user";
 
 export default function TransactionForm() {
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useUser();
 
-  const { mutate: addTransaction, isLoading } = useMutation({
+  const { mutate: addTransaction, isPending } = useMutation({
     mutationFn: async (data: { amount: number; description: string }) => {
       const response = await fetch("/api/transactions", {
         method: "POST",
@@ -25,10 +27,11 @@ export default function TransactionForm() {
       });
 
       if (!response.ok) {
+        const text = await response.text();
         if (response.status === 401) {
           throw new Error("Please log in to add transactions");
         }
-        throw new Error(await response.text());
+        throw new Error(text || "Failed to add transaction");
       }
 
       return response.json();
@@ -53,7 +56,23 @@ export default function TransactionForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || !description) return;
+    if (!user) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please log in to add transactions",
+      });
+      return;
+    }
+
+    if (!amount || !description) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please fill in all fields",
+      });
+      return;
+    }
 
     addTransaction({
       amount: Number(amount),
@@ -78,6 +97,7 @@ export default function TransactionForm() {
               onChange={(e) => setAmount(e.target.value)}
               required
               min="0"
+              placeholder="Enter amount"
             />
           </div>
           <div className="space-y-2">
@@ -88,10 +108,11 @@ export default function TransactionForm() {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               required
+              placeholder="Enter description"
             />
           </div>
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? (
+          <Button type="submit" className="w-full" disabled={isPending}>
+            {isPending ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
             ) : null}
             Add Transaction

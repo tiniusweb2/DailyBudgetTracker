@@ -31,8 +31,8 @@ export function setupAuth(app: Express) {
     saveUninitialized: false,
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      secure: app.get("env") === "production",
-      sameSite: "lax"
+      httpOnly: true,
+      sameSite: "lax",
     },
     store: new MemoryStore({
       checkPeriod: 86400000,
@@ -41,6 +41,7 @@ export function setupAuth(app: Express) {
 
   if (app.get("env") === "production") {
     app.set("trust proxy", 1);
+    sessionSettings.cookie!.secure = true;
   }
 
   app.use(session(sessionSettings));
@@ -60,13 +61,18 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "Incorrect username." });
         }
 
-        const isMatch = await comparePasswords(password, user.password);
-        if (!isMatch) {
+        const isValid = await comparePasswords(password, user.password);
+        if (!isValid) {
           return done(null, false, { message: "Incorrect password." });
         }
 
-        const { password: _, ...userWithoutPassword } = user;
-        return done(null, userWithoutPassword);
+        // Convert dailyBudgetAmount from string to number for the session
+        const userWithNumberAmount = {
+          ...user,
+          dailyBudgetAmount: Number(user.dailyBudgetAmount)
+        };
+
+        return done(null, userWithNumberAmount);
       } catch (err) {
         return done(err);
       }
@@ -89,8 +95,13 @@ export function setupAuth(app: Express) {
         return done(null, false);
       }
 
-      const { password: _, ...userWithoutPassword } = user;
-      done(null, userWithoutPassword);
+      // Convert dailyBudgetAmount from string to number for the session
+      const userWithNumberAmount = {
+        ...user,
+        dailyBudgetAmount: Number(user.dailyBudgetAmount)
+      };
+
+      done(null, userWithNumberAmount);
     } catch (err) {
       done(err);
     }
@@ -124,15 +135,19 @@ export function setupAuth(app: Express) {
         })
         .returning();
 
-      const { password: _, ...userWithoutPassword } = user;
+      // Convert dailyBudgetAmount from string to number for the session
+      const userWithNumberAmount = {
+        ...user,
+        dailyBudgetAmount: Number(user.dailyBudgetAmount)
+      };
 
-      req.logIn(userWithoutPassword, (err) => {
+      req.logIn(userWithNumberAmount, (err) => {
         if (err) {
           return next(err);
         }
         return res.json({
           message: "Registration successful",
-          user: userWithoutPassword
+          user: userWithNumberAmount
         });
       });
     } catch (error) {
