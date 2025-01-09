@@ -7,32 +7,13 @@ import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { type User } from "@db/schema";
 import { db } from "@db";
+import { AppError } from "./domain/errors/AppError";
 
 const scryptAsync = promisify(scrypt);
-const crypto = {
-  hash: async (password: string) => {
-    const salt = randomBytes(16).toString("hex");
-    const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-    return `${buf.toString("hex")}.${salt}`;
-  },
-  compare: async (suppliedPassword: string, storedPassword: string) => {
-    const [hashedPassword, salt] = storedPassword.split(".");
-    const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
-    const suppliedPasswordBuf = (await scryptAsync(
-      suppliedPassword,
-      salt,
-      64
-    )) as Buffer;
-    return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
-  },
-};
-
-// Define a type for serialized user (without password)
-type SerializedUser = Omit<User, "password">;
 
 declare global {
   namespace Express {
-    interface User extends SerializedUser {}
+    interface User extends Omit<User, "password"> {}
   }
 }
 
@@ -68,12 +49,12 @@ export function setupAuth(app: Express) {
         if (!user) {
           return done(null, false, { message: "Incorrect username." });
         }
-        const isMatch = await crypto.compare(password, user.password);
+
+        const isMatch = await comparePasswords(password, user.password);
         if (!isMatch) {
           return done(null, false, { message: "Incorrect password." });
         }
 
-        // Remove password from user object before serializing
         const { password: _, ...userWithoutPassword } = user;
         return done(null, userWithoutPassword);
       } catch (err) {
@@ -92,8 +73,6 @@ export function setupAuth(app: Express) {
       if (!user) {
         return done(null, false);
       }
-
-      // Remove password from user object
       const { password: _, ...userWithoutPassword } = user;
       done(null, userWithoutPassword);
     } catch (err) {
@@ -105,19 +84,22 @@ export function setupAuth(app: Express) {
     try {
       const { username, password } = req.body;
 
-      const existingUser = await db.findUserByUsername(username);
-      if (existingUser) {
-        return res.status(400).send("Username already exists");
+      if (!username || !password) {
+        throw AppError.badRequest("Username and password are required");
       }
 
-      const hashedPassword = await crypto.hash(password);
+      const existingUser = await db.findUserByUsername(username);
+      if (existingUser) {
+        throw AppError.badRequest("Username already exists");
+      }
+
+      const hashedPassword = await hashPassword(password);
       const user = await db.createUser({
         username,
         password: hashedPassword,
         dailyBudgetAmount: 50.00, // Default daily budget
       });
 
-      // Remove password before sending response
       const { password: _, ...userWithoutPassword } = user;
 
       req.logIn(userWithoutPassword, (err) => {
@@ -135,12 +117,12 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: SerializedUser | false, info: IVerifyOptions) => {
+    passport.authenticate("local", (err: any, user: Express.User | false, info: IVerifyOptions) => {
       if (err) {
         return next(err);
       }
       if (!user) {
-        return res.status(400).send(info.message);
+        return res.status(400).json({ error: info.message || "Login failed" });
       }
       req.logIn(user, (err) => {
         if (err) {
@@ -157,7 +139,7 @@ export function setupAuth(app: Express) {
   app.post("/api/logout", (req, res) => {
     req.logout((err) => {
       if (err) {
-        return res.status(500).send("Logout failed");
+        return res.status(500).json({ error: "Logout failed" });
       }
       res.json({ message: "Logged out successfully" });
     });
@@ -167,6 +149,27 @@ export function setupAuth(app: Express) {
     if (req.isAuthenticated()) {
       return res.json(req.user);
     }
-    res.status(401).send("Not authenticated");
+    res.status(401).json({ error: "Not authenticated" });
   });
+}
+
+// Password hashing utilities
+async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString("hex");
+  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+  return `${buf.toString("hex")}.${salt}`;
+}
+
+async function comparePasswords(
+  suppliedPassword: string,
+  storedPassword: string
+): Promise<boolean> {
+  const [hashedPassword, salt] = storedPassword.split(".");
+  const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
+  const suppliedPasswordBuf = (await scryptAsync(
+    suppliedPassword,
+    salt,
+    64
+  )) as Buffer;
+  return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
 }
