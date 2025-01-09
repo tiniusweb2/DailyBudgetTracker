@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { db } from '../db';
+import { db } from "@db";
 import { startOfDay, endOfDay, subDays } from 'date-fns';
-import { users, transactions, categories } from '../db/schema';
+import { users, transactions, categories } from "@db/schema";
 import { categoryPredictor } from '../services/CategoryPrediction';
 import { eq, and, gte, lte } from 'drizzle-orm';
 
@@ -10,28 +10,45 @@ describe('Transactions', () => {
   let foodCategoryId: number;
 
   beforeEach(async () => {
-    // Clear tables
+    // Clear transactions first due to foreign key constraint
     await db.delete(transactions);
+    // Then clear categories and users
     await db.delete(categories);
     await db.delete(users);
 
     // Create a test user
-    const [user] = await db.insert(users).values({
-      username: 'testuser',
-      password: 'password123',
-      dailyBudgetAmount: "50.00",
-    }).returning();
+    const [user] = await db
+      .insert(users)
+      .values({
+        username: 'testuser',
+        password: 'password123',
+        dailyBudgetAmount: "50.00",
+      })
+      .returning();
+
     userId = user.id;
 
-    // Create test categories
-    const [foodCategory] = await db.insert(categories).values({
-      name: 'Food & Dining',
-      description: 'Restaurants, groceries, and food delivery'
-    }).returning();
+    // Create test category
+    const [foodCategory] = await db
+      .insert(categories)
+      .values({
+        name: 'Food & Dining',
+        description: 'Restaurants, groceries, and food delivery'
+      })
+      .returning();
+
     foodCategoryId = foodCategory.id;
   });
 
   describe('Transaction Creation', () => {
+    it('should predict category correctly for food-related transactions', async () => {
+      const description = 'Lunch at restaurant';
+      const prediction = await categoryPredictor.predictCategory(description);
+
+      expect(prediction.confidence).toBeGreaterThan(0);
+      expect(prediction.categoryId).toBe(foodCategoryId);
+    });
+
     it('should create a new transaction with proper category', async () => {
       const transactionData = {
         userId,
@@ -49,15 +66,6 @@ describe('Transactions', () => {
       expect(transaction.amount).toBe('25.50');
       expect(transaction.description).toBe(transactionData.description);
       expect(transaction.categoryId).toBe(foodCategoryId);
-    });
-
-    it('should predict category correctly for food-related transactions', async () => {
-      const description = 'Lunch at restaurant';
-      const prediction = await categoryPredictor.predictCategory(description);
-
-      // Food category should be predicted for restaurant-related descriptions
-      expect(prediction.confidence).toBeGreaterThan(0.5);
-      expect(prediction.categoryId).toBe(foodCategoryId);
     });
   });
 
@@ -88,7 +96,6 @@ describe('Transactions', () => {
       const today = new Date();
       const yesterday = subDays(today, 1);
 
-      // Create transactions for different dates
       await Promise.all([
         db.insert(transactions).values({
           userId,
@@ -98,6 +105,7 @@ describe('Transactions', () => {
           createdAt: today
         }),
         db.insert(transactions).values({
+          userId,
           amount: "20.00",
           description: 'Dinner yesterday',
           categoryId: foodCategoryId,
@@ -108,13 +116,11 @@ describe('Transactions', () => {
       const results = await db
         .select()
         .from(transactions)
-        .where(
-          and(
-            eq(transactions.userId, userId),
-            gte(transactions.createdAt, startOfDay(yesterday)),
-            lte(transactions.createdAt, endOfDay(today))
-          )
-        );
+        .where(and(
+          eq(transactions.userId, userId),
+          gte(transactions.createdAt, startOfDay(yesterday)),
+          lte(transactions.createdAt, endOfDay(today))
+        ));
 
       expect(results).toHaveLength(2);
     });

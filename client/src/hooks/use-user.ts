@@ -22,6 +22,10 @@ async function handleRequest(
       credentials: "include",
     });
 
+    if (!response) {
+      throw new Error('Network response was not received');
+    }
+
     const data = await response.json();
 
     if (!response.ok) {
@@ -43,6 +47,10 @@ async function fetchUser(): Promise<SelectUser | null> {
       }
     });
 
+    if (!response) {
+      throw new Error('Network response was not received');
+    }
+
     if (response.status === 401) {
       return null;
     }
@@ -52,7 +60,7 @@ async function fetchUser(): Promise<SelectUser | null> {
     }
 
     return response.json();
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching user:', error);
     return null;
   }

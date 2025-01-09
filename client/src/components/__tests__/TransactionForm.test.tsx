@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import TransactionForm from '../TransactionForm';
 import { useToast } from '@/hooks/use-toast';
+import { useUser } from '@/hooks/use-user';
 
 // Mock the useToast hook
 vi.mock('@/hooks/use-toast', () => ({
@@ -11,6 +12,15 @@ vi.mock('@/hooks/use-toast', () => ({
     toast: vi.fn(),
     dismiss: vi.fn(),
     toasts: []
+  }))
+}));
+
+// Mock the useUser hook
+vi.mock('@/hooks/use-user', () => ({
+  useUser: vi.fn(() => ({
+    user: { id: 1, username: 'testuser' },
+    isLoading: false,
+    error: null,
   }))
 }));
 
@@ -65,6 +75,7 @@ describe('TransactionForm', () => {
         id: 1,
         amount: 50,
         description: 'Test transaction',
+        categoryConfidence: 0.8,
       }),
     } as Response);
 

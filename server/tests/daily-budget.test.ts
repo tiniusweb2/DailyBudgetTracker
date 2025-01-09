@@ -1,22 +1,28 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { db } from '../db';
-import { startOfDay, endOfDay, subDays } from 'date-fns';
+import { describe, it, expect, beforeEach } from "vitest";
+import { db } from "@db";
+import { startOfDay, endOfDay, subDays } from "date-fns";
+import { users, transactions, dailyBudgets } from "@db/schema";
+import { eq, and, gte, lte } from "drizzle-orm";
 
-describe('Daily Budget', () => {
+describe("Daily Budget", () => {
   let userId: number;
 
   beforeEach(async () => {
-    // Clear the database before each test
-    await db.delete(db.schema.users);
-    await db.delete(db.schema.transactions);
-    await db.delete(db.schema.dailyBudgets);
+    // Clear transactions first due to foreign key constraint
+    await db.delete(transactions);
+    await db.delete(dailyBudgets);
+    await db.delete(users);
 
     // Create a test user
-    const [user] = await db.insert(db.schema.users).values({
-      username: 'testuser',
-      password: 'password123',
-      dailyBudgetAmount: "50.00",
-    }).returning();
+    const [user] = await db
+      .insert(users)
+      .values({
+        username: 'testuser',
+        password: 'password123',
+        dailyBudgetAmount: "50.00",
+      })
+      .returning();
+
     userId = user.id;
   });
 
@@ -25,12 +31,12 @@ describe('Daily Budget', () => {
     const budgetData = {
       userId,
       date: today,
-      available: "50.00",
+      budgetAmount: "50.00",
       spent: "0.00",
       saved: "0.00",
     };
 
-    const [budget] = await db.insert(db.schema.dailyBudgets).values(budgetData).returning();
+    const [budget] = await db.insert(dailyBudgets).values(budgetData).returning();
     expect(budget.userId).toBe(userId);
     expect(budget.budgetAmount).toBe("50.00");
     expect(budget.spent).toBe("0.00");
@@ -47,15 +53,15 @@ describe('Daily Budget', () => {
       saved: "10.00",
     };
 
-    await db.insert(db.schema.dailyBudgets).values(budgetData);
+    await db.insert(dailyBudgets).values(budgetData);
 
     const [foundBudget] = await db
       .select()
-      .from(db.schema.dailyBudgets)
-      .where(db => db.and(
-        db.eq(db.schema.dailyBudgets.userId, userId),
-        db.gte(db.schema.dailyBudgets.date, startOfDay(today)),
-        db.lte(db.schema.dailyBudgets.date, endOfDay(today))
+      .from(dailyBudgets)
+      .where(and(
+        eq(dailyBudgets.userId, userId),
+        gte(dailyBudgets.date, startOfDay(today)),
+        lte(dailyBudgets.date, endOfDay(today))
       ))
       .limit(1);
 
@@ -70,14 +76,14 @@ describe('Daily Budget', () => {
     const yesterday = subDays(today, 1);
 
     await Promise.all([
-      db.insert(db.schema.dailyBudgets).values({
+      db.insert(dailyBudgets).values({
         userId,
         date: today,
         budgetAmount: "50.00",
         spent: "20.00",
         saved: "0.00",
       }),
-      db.insert(db.schema.dailyBudgets).values({
+      db.insert(dailyBudgets).values({
         userId,
         date: yesterday,
         budgetAmount: "50.00",
@@ -88,9 +94,9 @@ describe('Daily Budget', () => {
 
     const budgets = await db
       .select()
-      .from(db.schema.dailyBudgets)
-      .where(db => db.eq(db.schema.dailyBudgets.userId, userId))
-      .orderBy(db.schema.dailyBudgets.date);
+      .from(dailyBudgets)
+      .where(eq(dailyBudgets.userId, userId))
+      .orderBy(dailyBudgets.date);
 
     expect(budgets).toHaveLength(2);
 

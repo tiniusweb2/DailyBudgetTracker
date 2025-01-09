@@ -1,4 +1,3 @@
-import * as tf from '@tensorflow/tfjs-node';
 import natural from 'natural';
 import { db } from '@db';
 import { categories } from '@db/schema';
@@ -7,62 +6,79 @@ import { eq } from 'drizzle-orm';
 const tokenizer = new natural.WordTokenizer();
 const stemmer = natural.PorterStemmer;
 
+interface CategoryPrediction {
+  categoryId: number;
+  confidence: number;
+}
+
 export class CategoryPredictionService {
-  private model: tf.LayersModel | null = null;
-  private categories: string[] = [];
-  
+  private categoryMap: Map<string, number> = new Map();
+  private initialized: boolean = false;
+
   constructor() {
     this.loadCategories();
   }
 
   private async loadCategories() {
     const categoryList = await db.select().from(categories);
-    this.categories = categoryList.map(c => c.name);
+    for (const category of categoryList) {
+      this.categoryMap.set(category.name.toLowerCase(), category.id);
+    }
+    this.initialized = true;
   }
 
-  private preprocessText(description: string): number[] {
-    // Simple bag of words approach
-    const tokens = tokenizer.tokenize(description.toLowerCase()) || [];
-    const stems = tokens.map(token => stemmer.stem(token));
-    
-    // Create a simple feature vector based on common expense-related terms
-    const features = [
-      stems.some(s => ['food', 'eat', 'restaurant', 'meal', 'groceri'].includes(s)) ? 1 : 0,
-      stems.some(s => ['transport', 'bus', 'train', 'taxi', 'uber'].includes(s)) ? 1 : 0,
-      stems.some(s => ['util', 'electr', 'water', 'gas', 'internet'].includes(s)) ? 1 : 0,
-      stems.some(s => ['entertain', 'movi', 'game', 'music', 'show'].includes(s)) ? 1 : 0,
-      stems.some(s => ['shop', 'cloth', 'shoe', 'retail'].includes(s)) ? 1 : 0,
-    ];
-    
-    return features;
+  private preprocessText(text: string): string[] {
+    const tokens = tokenizer.tokenize(text.toLowerCase()) || [];
+    return tokens.map(token => stemmer.stem(token));
   }
 
-  async predictCategory(description: string): Promise<{ categoryId: number; confidence: number }> {
-    const features = this.preprocessText(description);
-    
-    // For now, use rule-based categorization
-    // In a real application, this would use the TensorFlow model
-    const maxIndex = features.indexOf(Math.max(...features));
-    
-    // Map the index to category IDs (these should match your seeded categories)
-    const categoryMap = {
-      0: 1, // Food
-      1: 2, // Transportation
-      2: 3, // Utilities
-      3: 4, // Entertainment
-      4: 5, // Shopping
+  private calculateConfidence(stems: string[], targetTerms: string[]): number {
+    let matches = 0;
+    for (const term of targetTerms) {
+      if (stems.some(stem => stem.includes(term) || term.includes(stem))) {
+        matches++;
+      }
+    }
+    return matches / targetTerms.length;
+  }
+
+  async predictCategory(description: string): Promise<CategoryPrediction> {
+    if (!this.initialized) {
+      await this.loadCategories();
+    }
+
+    const stems = this.preprocessText(description);
+
+    // Keywords for each category
+    const categoryKeywords = {
+      'food & dining': ['food', 'eat', 'restaurant', 'meal', 'groceri', 'dinner', 'lunch', 'breakfast', 'cafe', 'snack'],
+      'transportation': ['transport', 'bus', 'train', 'taxi', 'uber', 'ride', 'gas', 'fare', 'metro', 'car'],
+      'utilities': ['util', 'electr', 'water', 'gas', 'internet', 'phone', 'bill', 'wifi'],
+      'entertainment': ['entertain', 'movi', 'game', 'music', 'show', 'concert', 'theater', 'sport'],
+      'shopping': ['shop', 'cloth', 'shoe', 'retail', 'store', 'mall', 'market', 'buy']
     };
-    
-    // Get the predicted category
-    const [category] = await db
-      .select()
-      .from(categories)
-      .where(eq(categories.id, categoryMap[maxIndex as keyof typeof categoryMap]))
-      .limit(1);
-    
+
+    let bestMatch = {
+      category: 'food & dining',
+      confidence: 0
+    };
+
+    // Calculate confidence for each category
+    for (const [category, keywords] of Object.entries(categoryKeywords)) {
+      const confidence = this.calculateConfidence(stems, keywords);
+      if (confidence > bestMatch.confidence) {
+        bestMatch = { category, confidence };
+      }
+    }
+
+    const categoryId = this.categoryMap.get(bestMatch.category);
+    if (!categoryId) {
+      throw new Error(`Category not found: ${bestMatch.category}`);
+    }
+
     return {
-      categoryId: category.id,
-      confidence: features[maxIndex],
+      categoryId,
+      confidence: Math.max(bestMatch.confidence, 0.1) // Ensure minimum confidence of 0.1
     };
   }
 }
