@@ -27,10 +27,12 @@ const crypto = {
   },
 };
 
+// Define a type for serialized user (without password)
+type SerializedUser = Omit<User, "password">;
+
 declare global {
   namespace Express {
-    // eslint-disable-next-line @typescript-eslint/no-empty-interface
-    interface User extends Omit<User, "password"> {}
+    interface User extends SerializedUser {}
   }
 }
 
@@ -122,7 +124,10 @@ export function setupAuth(app: Express) {
         if (err) {
           return next(err);
         }
-        return res.json(userWithoutPassword);
+        return res.json({
+          message: "Registration successful",
+          user: userWithoutPassword
+        });
       });
     } catch (error) {
       next(error);
@@ -130,7 +135,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: User | false, info: IVerifyOptions) => {
+    passport.authenticate("local", (err: any, user: SerializedUser | false, info: IVerifyOptions) => {
       if (err) {
         return next(err);
       }
@@ -141,7 +146,10 @@ export function setupAuth(app: Express) {
         if (err) {
           return next(err);
         }
-        return res.json(user);
+        return res.json({
+          message: "Login successful",
+          user
+        });
       });
     })(req, res, next);
   });

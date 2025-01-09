@@ -4,15 +4,8 @@ import { setupAuth } from "./auth";
 import { db } from "@db";
 import { startOfDay, endOfDay, subDays } from "date-fns";
 
-declare global {
-  namespace Express {
-    interface User {
-      id: number;
-      username: string;
-      dailyBudgetAmount: number;
-    }
-  }
-}
+// The User type in Express.User is already defined in auth.ts
+// We don't need to redeclare it here
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
