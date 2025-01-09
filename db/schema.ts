@@ -2,6 +2,7 @@ import { pgTable, text, integer, decimal, timestamp, date } from "drizzle-orm/pg
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 
+// Define tables
 export const users = pgTable("users", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   username: text("username").notNull().unique(),
@@ -10,18 +11,9 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const categories = pgTable("categories", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: integer("user_id").notNull().references(() => users.id),
-  name: text("name").notNull(),
-  color: text("color").notNull().default("#6366f1"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
 export const transactions = pgTable("transactions", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   userId: integer("user_id").notNull().references(() => users.id),
-  categoryId: integer("category_id").references(() => categories.id),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   description: text("description").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -32,8 +24,8 @@ export const dailyBudgets = pgTable("daily_budgets", {
   userId: integer("user_id").notNull().references(() => users.id),
   date: date("date").notNull(),
   available: decimal("available", { precision: 10, scale: 2 }).notNull(),
-  spent: decimal("spent", { precision: 10, scale: 2 }).notNull(),
-  saved: decimal("saved", { precision: 10, scale: 2 }).notNull(),
+  spent: decimal("spent", { precision: 10, scale: 2 }).notNull().default("0"),
+  saved: decimal("saved", { precision: 10, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -41,24 +33,12 @@ export const dailyBudgets = pgTable("daily_budgets", {
 export const usersRelations = relations(users, ({ many }) => ({
   transactions: many(transactions),
   dailyBudgets: many(dailyBudgets),
-  categories: many(categories),
-}));
-
-export const categoriesRelations = relations(categories, ({ one }) => ({
-  user: one(users, {
-    fields: [categories.userId],
-    references: [users.id],
-  }),
 }));
 
 export const transactionsRelations = relations(transactions, ({ one }) => ({
   user: one(users, {
     fields: [transactions.userId],
     references: [users.id],
-  }),
-  category: one(categories, {
-    fields: [transactions.categoryId],
-    references: [categories.id],
   }),
 }));
 
@@ -70,13 +50,47 @@ export const dailyBudgetsRelations = relations(dailyBudgets, ({ one }) => ({
 }));
 
 // Type definitions
-export type User = typeof users.$inferSelect;
-export type InsertUser = typeof users.$inferInsert;
-export type Category = typeof categories.$inferSelect;
-export type InsertCategory = typeof categories.$inferInsert;
-export type Transaction = typeof transactions.$inferSelect;
-export type DailyBudget = typeof dailyBudgets.$inferSelect;
+export interface User {
+  id: number;
+  username: string;
+  password: string;
+  dailyBudgetAmount: number;
+  createdAt: Date;
+}
+
+export interface Transaction {
+  id: number;
+  userId: number;
+  amount: number;
+  description: string;
+  createdAt: Date;
+}
+
+export interface DailyBudget {
+  id: number;
+  userId: number;
+  date: Date;
+  available: number;
+  spent: number;
+  saved: number;
+  createdAt: Date;
+}
+
+export type InsertUser = Omit<User, 'id' | 'createdAt'>;
 export type SelectUser = User;
+
+// Helper function to convert decimal strings to numbers
+export function convertDecimalToNumber<T>(obj: T): T {
+  if (!obj || typeof obj !== 'object') return obj;
+
+  const newObj = { ...obj };
+  for (const [key, value] of Object.entries(newObj)) {
+    if (typeof value === 'string' && !isNaN(Number(value))) {
+      (newObj as any)[key] = Number(value);
+    }
+  }
+  return newObj;
+}
 
 // Zod schemas
 export const insertUserSchema = createInsertSchema(users);
