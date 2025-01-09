@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import BudgetDisplay from "@/components/BudgetDisplay";
 import TransactionList from "@/components/TransactionList";
 import BudgetChart from "@/components/BudgetChart";
+import TransactionForm from "@/components/TransactionForm";
 import { useUser } from "@/hooks/use-user";
 
 export default function DashboardPage() {
@@ -20,7 +21,14 @@ export default function DashboardPage() {
           <BudgetChart />
         </div>
 
-        <TransactionList />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6">
+          <div className="md:col-span-1">
+            <TransactionForm />
+          </div>
+          <div className="md:col-span-2">
+            <TransactionList />
+          </div>
+        </div>
       </div>
     </div>
   );
