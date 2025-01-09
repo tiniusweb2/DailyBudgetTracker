@@ -17,6 +17,15 @@ export default function AuthPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!username || !password) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please fill in all fields",
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -24,15 +33,20 @@ export default function AuthPage() {
       if (!result.ok) {
         toast({
           variant: "destructive",
-          title: "Error",
-          description: result.message,
+          title: "Authentication Error",
+          description: result.message || "Failed to authenticate",
+        });
+      } else {
+        toast({
+          title: "Success",
+          description: isLogin ? "Logged in successfully" : "Account created successfully",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "An unexpected error occurred",
+        description: error.message || "An unexpected error occurred",
       });
     } finally {
       setIsLoading(false);
@@ -57,6 +71,8 @@ export default function AuthPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
+                disabled={isLoading}
+                placeholder="Enter your username"
               />
             </div>
             <div className="space-y-2">
@@ -67,6 +83,8 @@ export default function AuthPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                disabled={isLoading}
+                placeholder="Enter your password"
               />
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
