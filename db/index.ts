@@ -11,6 +11,11 @@ class InMemoryDB {
 
   // User operations
   async createUser(data: Omit<User, "id" | "createdAt">): Promise<User> {
+    const existingUser = await this.findUserByUsername(data.username);
+    if (existingUser) {
+      throw new Error("Username already exists");
+    }
+
     const id = this.userIdCounter++;
     const user: User = {
       id,
@@ -42,6 +47,7 @@ class InMemoryDB {
   }
 
   async findTransactionsByUserId(userId: number): Promise<Transaction[]> {
+    // Sort transactions by createdAt in descending order (newest first)
     return Array.from(this.transactions.values())
       .filter(t => t.userId === userId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -72,7 +78,7 @@ class InMemoryDB {
     );
   }
 
-  async updateDailyBudget(id: number, data: Partial<DailyBudget>): Promise<DailyBudget | undefined> {
+  async updateDailyBudget(id: number, data: Partial<Omit<DailyBudget, "id" | "createdAt" | "userId" | "date">>): Promise<DailyBudget | undefined> {
     const budget = this.dailyBudgets.get(id);
     if (!budget) return undefined;
 
