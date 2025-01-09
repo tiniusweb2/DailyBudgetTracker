@@ -3,6 +3,8 @@ import BudgetDisplay from "@/components/BudgetDisplay";
 import TransactionList from "@/components/TransactionList";
 import BudgetChart from "@/components/BudgetChart";
 import TransactionForm from "@/components/TransactionForm";
+import PlannedExpenseForm from "@/components/PlannedExpenseForm";
+import PlannedExpensesList from "@/components/PlannedExpensesList";
 import { useUser } from "@/hooks/use-user";
 
 export default function DashboardPage() {
@@ -24,8 +26,10 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6">
           <div className="space-y-6">
             <TransactionForm />
+            <PlannedExpenseForm />
           </div>
-          <div className="md:col-span-2">
+          <div className="md:col-span-2 space-y-6">
+            <PlannedExpensesList />
             <TransactionList />
           </div>
         </div>
