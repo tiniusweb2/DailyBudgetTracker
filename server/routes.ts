@@ -19,7 +19,8 @@ export function registerRoutes(app: Express): Server {
   // Middleware to ensure user is authenticated
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: "Not authenticated" });
+      res.status(401).json({ message: "Not authenticated" });
+      return;
     }
     next();
   };
@@ -54,7 +55,10 @@ export function registerRoutes(app: Express): Server {
           spent: dailyBudget.spent,
           saved: dailyBudget.saved
         },
-        dailyBudgets: recentBudgets
+        dailyBudgets: recentBudgets.map(b => ({
+          ...b,
+          available: b.budgetAmount - b.spent
+        }))
       });
     } catch (error) {
       next(error);
