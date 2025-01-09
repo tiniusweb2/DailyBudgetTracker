@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { db } from "@db";
-import { transactions, dailyBudgets } from "@db/schema";
+import { transactions, dailyBudgets, categories } from "@db/schema";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { startOfDay, endOfDay, subDays } from "date-fns";
 
@@ -66,6 +66,48 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Get user's categories
+  app.get("/api/categories", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    try {
+      const userCategories = await db
+        .select()
+        .from(categories)
+        .where(eq(categories.userId, req.user.id))
+        .orderBy(categories.name);
+
+      res.json(userCategories);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch categories" });
+    }
+  });
+
+  // Create new category
+  app.post("/api/categories", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    try {
+      const { name, color } = req.body;
+      const [category] = await db
+        .insert(categories)
+        .values({
+          userId: req.user.id,
+          name,
+          color,
+        })
+        .returning();
+
+      res.json(category);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create category" });
+    }
+  });
+
   // Add new transaction
   app.post("/api/transactions", async (req, res) => {
     if (!req.isAuthenticated()) {
@@ -73,7 +115,7 @@ export function registerRoutes(app: Express): Server {
     }
 
     try {
-      const { amount, description } = req.body;
+      const { amount, description, categoryId } = req.body;
 
       const [transaction] = await db
         .insert(transactions)
@@ -81,6 +123,7 @@ export function registerRoutes(app: Express): Server {
           userId: req.user.id,
           amount,
           description,
+          categoryId,
         })
         .returning();
 

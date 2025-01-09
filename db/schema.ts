@@ -10,9 +10,18 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const categories = pgTable("categories", {
+  id: serial("id").primaryKey(),
+  userId: serial("user_id").references(() => users.id),
+  name: text("name").notNull(),
+  color: text("color").notNull().default('#6366f1'), // Default indigo color
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const transactions = pgTable("transactions", {
   id: serial("id").primaryKey(),
   userId: serial("user_id").references(() => users.id),
+  categoryId: serial("category_id").references(() => categories.id),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   description: text("description").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -31,12 +40,36 @@ export const dailyBudgets = pgTable("daily_budgets", {
 export const usersRelations = relations(users, ({ many }) => ({
   transactions: many(transactions),
   dailyBudgets: many(dailyBudgets),
+  categories: many(categories),
+}));
+
+export const categoriesRelations = relations(categories, ({ one, many }) => ({
+  user: one(users, {
+    fields: [categories.userId],
+    references: [users.id],
+  }),
+  transactions: many(transactions),
+}));
+
+export const transactionsRelations = relations(transactions, ({ one }) => ({
+  user: one(users, {
+    fields: [transactions.userId],
+    references: [users.id],
+  }),
+  category: one(categories, {
+    fields: [transactions.categoryId],
+    references: [categories.id],
+  }),
 }));
 
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
+export const insertCategorySchema = createInsertSchema(categories);
+export const selectCategorySchema = createSelectSchema(categories);
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+export type Category = typeof categories.$inferSelect;
+export type InsertCategory = typeof categories.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
 export type DailyBudget = typeof dailyBudgets.$inferSelect;
