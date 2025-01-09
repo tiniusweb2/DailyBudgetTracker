@@ -3,7 +3,6 @@ import BudgetDisplay from "@/components/BudgetDisplay";
 import TransactionList from "@/components/TransactionList";
 import BudgetChart from "@/components/BudgetChart";
 import TransactionForm from "@/components/TransactionForm";
-import CategoryManager from "@/components/CategoryManager";
 import { useUser } from "@/hooks/use-user";
 
 export default function DashboardPage() {
@@ -24,7 +23,6 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6">
           <div className="space-y-6">
-            <CategoryManager />
             <TransactionForm />
           </div>
           <div className="md:col-span-2">

@@ -2,9 +2,19 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { db } from "@db";
-import { transactions, dailyBudgets } from "@db/schema";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { transactions, dailyBudgets, type User } from "@db/schema";
+import { eq, and, sql } from "drizzle-orm";
 import { startOfDay, endOfDay, subDays } from "date-fns";
+
+declare global {
+  namespace Express {
+    interface User {
+      id: number;
+      username: string;
+      dailyBudgetAmount: string;
+    }
+  }
+}
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
@@ -23,7 +33,7 @@ export function registerRoutes(app: Express): Server {
         .where(
           and(
             eq(dailyBudgets.userId, req.user.id),
-            eq(dailyBudgets.date, today)
+            sql`DATE(${dailyBudgets.date}) = DATE(${sql.raw(today.toISOString())})`
           )
         )
         .limit(1);
@@ -34,8 +44,8 @@ export function registerRoutes(app: Express): Server {
         .where(
           and(
             eq(transactions.userId, req.user.id),
-            gte(transactions.createdAt, startOfDay(subDays(today, 7))),
-            lte(transactions.createdAt, endOfDay(today))
+            sql`${transactions.createdAt} >= ${sql.raw(startOfDay(subDays(today, 7)).toISOString())}`,
+            sql`${transactions.createdAt} <= ${sql.raw(endOfDay(today).toISOString())}`
           )
         )
         .orderBy(transactions.createdAt);
@@ -46,22 +56,38 @@ export function registerRoutes(app: Express): Server {
         .where(
           and(
             eq(dailyBudgets.userId, req.user.id),
-            gte(dailyBudgets.date, subDays(today, 7)),
-            lte(dailyBudgets.date, today)
+            sql`DATE(${dailyBudgets.date}) >= DATE(${sql.raw(subDays(today, 7).toISOString())})`,
+            sql`DATE(${dailyBudgets.date}) <= DATE(${sql.raw(today.toISOString())})`
           )
         )
         .orderBy(dailyBudgets.date);
 
+      // Convert decimal strings to numbers for the response
       res.json({
-        transactions: recentTransactions,
-        dailyBudget: todayBudget || {
-          available: req.user.dailyBudgetAmount,
-          spent: 0,
-          saved: 0,
-        },
-        dailyBudgets: pastWeekBudgets,
+        transactions: recentTransactions.map(t => ({
+          ...t,
+          amount: Number(t.amount)
+        })),
+        dailyBudget: todayBudget 
+          ? {
+              available: Number(todayBudget.available),
+              spent: Number(todayBudget.spent),
+              saved: Number(todayBudget.saved)
+            }
+          : {
+              available: Number(req.user.dailyBudgetAmount),
+              spent: 0,
+              saved: 0
+            },
+        dailyBudgets: pastWeekBudgets.map(b => ({
+          ...b,
+          available: Number(b.available),
+          spent: Number(b.spent),
+          saved: Number(b.saved)
+        }))
       });
     } catch (error) {
+      console.error('Failed to fetch transactions:', error);
       res.status(500).json({ error: "Failed to fetch transactions" });
     }
   });
@@ -79,7 +105,7 @@ export function registerRoutes(app: Express): Server {
         .insert(transactions)
         .values({
           userId: req.user.id,
-          amount,
+          amount: amount.toString(),
           description,
         })
         .returning();
@@ -92,7 +118,7 @@ export function registerRoutes(app: Express): Server {
         .where(
           and(
             eq(dailyBudgets.userId, req.user.id),
-            eq(dailyBudgets.date, today)
+            sql`DATE(${dailyBudgets.date}) = DATE(${sql.raw(today.toISOString())})`
           )
         )
         .limit(1);
@@ -101,8 +127,8 @@ export function registerRoutes(app: Express): Server {
         await db
           .update(dailyBudgets)
           .set({
-            spent: Number(existingBudget.spent) + Number(amount),
-            available: Number(existingBudget.available) - Number(amount),
+            spent: (Number(existingBudget.spent) + Number(amount)).toString(),
+            available: (Number(existingBudget.available) - Number(amount)).toString(),
           })
           .where(eq(dailyBudgets.id, existingBudget.id));
       } else {
@@ -111,14 +137,19 @@ export function registerRoutes(app: Express): Server {
           .values({
             userId: req.user.id,
             date: today,
-            available: Number(req.user.dailyBudgetAmount) - Number(amount),
-            spent: Number(amount),
-            saved: 0,
+            available: (Number(req.user.dailyBudgetAmount) - Number(amount)).toString(),
+            spent: amount.toString(),
+            saved: '0',
           });
       }
 
-      res.json(transaction);
+      // Convert decimal strings to numbers for the response
+      res.json({
+        ...transaction,
+        amount: Number(transaction.amount)
+      });
     } catch (error) {
+      console.error('Failed to add transaction:', error);
       res.status(500).json({ error: "Failed to add transaction" });
     }
   });
