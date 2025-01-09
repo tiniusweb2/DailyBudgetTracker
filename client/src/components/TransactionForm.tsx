@@ -36,13 +36,13 @@ export default function TransactionForm() {
 
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setAmount("");
       setDescription("");
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       toast({
         title: "Success",
-        description: "Transaction added successfully",
+        description: `Transaction added successfully and categorized with ${Math.round(data.categoryConfidence * 100)}% confidence`,
       });
     },
     onError: (error: Error) => {

@@ -6,6 +6,7 @@ import { DrizzleUserRepository } from "./data/repositories/UserRepository";
 import { DrizzleDailyBudgetRepository } from "./data/repositories/DailyBudgetRepository";
 import { startOfDay, endOfDay, subDays } from "date-fns";
 import { AppError } from "./domain/errors/AppError";
+import { categoryPredictor } from "./services/CategoryPrediction";
 
 export function registerRoutes(app: Express): Server {
   // Initialize repositories
@@ -65,7 +66,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Add new transaction
+  // Add new transaction with automatic categorization
   app.post("/api/transactions", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { amount, description } = req.body;
@@ -74,11 +75,15 @@ export function registerRoutes(app: Express): Server {
         throw AppError.badRequest("Invalid transaction data");
       }
 
-      // Create the transaction
+      // Use ML to predict the category
+      const { categoryId, confidence } = await categoryPredictor.predictCategory(description);
+
+      // Create the transaction with predicted category
       const transaction = await transactionRepo.create({
         userId: req.user!.id,
         amount,
-        description
+        description,
+        categoryId
       });
 
       // Update daily budget spent amount
@@ -87,7 +92,10 @@ export function registerRoutes(app: Express): Server {
         spent: dailyBudget.spent + amount
       });
 
-      res.json(transaction);
+      res.json({
+        ...transaction,
+        categoryConfidence: confidence
+      });
     } catch (error) {
       next(error);
     }
