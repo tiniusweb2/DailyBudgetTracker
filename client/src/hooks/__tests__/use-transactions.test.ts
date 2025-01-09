@@ -2,7 +2,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { useTransactions } from '../use-transactions';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import React, { type PropsWithChildren } from 'react';
+import { ReactNode } from 'react';
 
 describe('useTransactions', () => {
   let queryClient: QueryClient;
@@ -12,11 +12,8 @@ describe('useTransactions', () => {
       defaultOptions: {
         queries: {
           retry: false,
-          staleTime: Infinity,
-          cacheTime: Infinity,
-          refetchOnMount: false,
-          refetchOnWindowFocus: false,
-          refetchOnReconnect: false
+          gcTime: 0,
+          staleTime: 0
         },
       },
     });
@@ -26,15 +23,15 @@ describe('useTransactions', () => {
     queryClient.clear();
   });
 
-  function createWrapper() {
-    return function Wrapper({ children }: PropsWithChildren) {
-      return React.createElement(
-        QueryClientProvider,
-        { client: queryClient },
-        children
+  const createWrapper = () => {
+    return function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
       );
     };
-  }
+  };
 
   it('starts with empty transactions and loading state', () => {
     const { result } = renderHook(() => useTransactions(), {
@@ -71,49 +68,33 @@ describe('useTransactions', () => {
       ],
     };
 
-    // Setup initial state in the cache
-    queryClient.setQueryData(['/api/transactions'], mockData);
-
-    // Mock successful API response
-    const mockFetch = vi.spyOn(global, 'fetch').mockResolvedValue({
+    const mockFetch = vi.spyOn(global, 'fetch').mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve(mockData),
-      status: 200,
-      headers: new Headers(),
-      statusText: 'OK',
-      type: 'default',
-      url: '/api/transactions',
-      clone: () => ({ json: () => Promise.resolve(mockData) } as Response),
-      body: null,
-      bodyUsed: false,
-      arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
-      blob: () => Promise.resolve(new Blob()),
-      formData: () => Promise.resolve(new FormData()),
-      text: () => Promise.resolve(''),
-      redirected: false,
-    });
+    } as Response);
 
     const { result } = renderHook(() => useTransactions(), {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => {
-      expect(result.current.isLoading).toBe(false);
-    }, { timeout: 3000 });
+    expect(result.current.isLoading).toBe(true);
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith('/api/transactions', {
-        credentials: 'include',
+      expect(mockFetch).toHaveBeenCalledWith("/api/transactions", {
+        credentials: "include",
       });
+    });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
       expect(result.current.transactions).toHaveLength(1);
       expect(result.current.dailyBudget?.available).toBe(100);
       expect(result.current.dailyBudget?.spent).toBe(50);
-    }, { timeout: 3000 });
+    });
   });
 
   it('handles API errors', async () => {
-    // Mock failed API response
-    vi.spyOn(global, 'fetch').mockRejectedValue(new Error('API Error'));
+    vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('API Error'));
 
     const { result } = renderHook(() => useTransactions(), {
       wrapper: createWrapper(),
@@ -123,6 +104,6 @@ describe('useTransactions', () => {
       expect(result.current.isLoading).toBe(false);
       expect(result.current.error).toBeDefined();
       expect(result.current.transactions).toEqual([]);
-    }, { timeout: 2000 });
+    });
   });
 });

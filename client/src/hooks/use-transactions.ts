@@ -14,6 +14,17 @@ interface TransactionsResponse {
 export function useTransactions() {
   const { data, isLoading, error } = useQuery<TransactionsResponse>({
     queryKey: ["/api/transactions"],
+    queryFn: async () => {
+      const response = await fetch("/api/transactions", {
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      return response.json();
+    },
   });
 
   return {
