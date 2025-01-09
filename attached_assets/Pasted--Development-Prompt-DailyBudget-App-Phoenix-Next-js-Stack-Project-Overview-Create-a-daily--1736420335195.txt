@@ -1,0 +1,281 @@
+# Development Prompt: DailyBudget App (Phoenix + Next.js Stack)
+
+## Project Overview
+Create a daily budget tracking application that helps users manage their daily spending through real-time bank integration. The app should provide a daily spending allowance that automatically updates based on transactions and allows for accumulated savings visualization.
+
+## Technical Stack
+
+### Backend (Phoenix)
+- Elixir/Phoenix for the API and real-time features
+- PostgreSQL for the database
+- Phoenix LiveView for real-time updates (optional for admin dashboard)
+- Guardian for JWT authentication
+- Absinthe for GraphQL API (optional)
+- Ecto for database operations
+
+### Frontend (Next.js)
+- Next.js 14+ with App Router
+- TypeScript
+- TailwindCSS for styling
+- Tanstack Query for data fetching
+- Zustand for state management
+- React Native for iOS app (shared logic with Next.js)
+
+### Infrastructure
+- Docker for containerization
+- GitHub Actions for CI/CD
+- Fly.io or Gigalixir for hosting (both excellent for Phoenix)
+
+## Core Features Implementation
+
+### 1. Authentication System
+```elixir
+# Phoenix Schema
+defmodule DailyBudget.Accounts.User do
+  use Ecto.Schema
+  
+  schema "users" do
+    field :email, :string
+    field :encrypted_password, :string
+    field :daily_budget_amount, :decimal
+    
+    has_many :bank_connections, BankConnection
+    has_many :transactions, Transaction
+    
+    timestamps()
+  end
+end
+```
+
+### 2. Bank Integration Service
+```elixir
+# Phoenix Context
+defmodule DailyBudget.Banking do
+  use GenServer
+  
+  def start_link(_) do
+    GenServer.start_link(__MODULE__, %{})
+  end
+  
+  def init(state) do
+    # Set up banking API connections
+    {:ok, state}
+  end
+  
+  def handle_info({:new_transaction, transaction}, state) do
+    # Broadcast to relevant user channels
+    DailyBudgetWeb.Endpoint.broadcast(
+      "user:#{transaction.user_id}",
+      "transaction",
+      transaction
+    )
+    {:noreply, state}
+  end
+end
+```
+
+### 3. Real-time Transaction Processing
+```elixir
+# Phoenix Channel
+defmodule DailyBudgetWeb.TransactionChannel do
+  use Phoenix.Channel
+  
+  def join("transactions:" <> user_id, _params, socket) do
+    if authorized?(socket, user_id) do
+      {:ok, socket}
+    else
+      {:error, %{reason: "unauthorized"}}
+    end
+  end
+  
+  def handle_in("new_transaction", payload, socket) do
+    # Process new transaction
+    broadcast!(socket, "new_transaction", payload)
+    {:noreply, socket}
+  end
+end
+```
+
+### 4. Frontend Implementation (Next.js)
+
+```typescript
+// app/components/DailyBudget.tsx
+import { useEffect } from 'react'
+import { useSocket } from '@/hooks/useSocket'
+import { useStore } from '@/store'
+
+export const DailyBudget = () => {
+  const { socket } = useSocket()
+  const { dailyBudget, updateBudget } = useStore()
+  
+  useEffect(() => {
+    if (!socket) return
+    
+    const channel = socket.channel(`transactions:${userId}`)
+    channel.join()
+      .receive("ok", resp => console.log("Joined successfully", resp))
+      
+    channel.on("new_transaction", payload => {
+      updateBudget(payload)
+    })
+    
+    return () => {
+      channel.leave()
+    }
+  }, [socket])
+  
+  return (
+    <div className="p-4 rounded-lg bg-white shadow-lg">
+      <h2 className="text-2xl font-bold">Today's Budget</h2>
+      <div className="mt-4 text-3xl">
+        ${dailyBudget.remaining}
+        {dailyBudget.saved > 0 && (
+          <span className="text-green-500 text-sm ml-2">
+            +${dailyBudget.saved} saved
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+```
+
+## Database Schema
+
+```mermaid
+erDiagram
+    Users ||--o{ BankConnections : has
+    Users ||--o{ Transactions : has
+    Users ||--o{ DailyBudgets : has
+    BankConnections ||--o{ Transactions : generates
+    
+    Users {
+        int id
+        string email
+        string encrypted_password
+        decimal daily_budget_amount
+        timestamp inserted_at
+        timestamp updated_at
+    }
+    
+    BankConnections {
+        int id
+        int user_id
+        string access_token
+        string bank_name
+        timestamp last_sync
+        timestamp inserted_at
+        timestamp updated_at
+    }
+    
+    Transactions {
+        int id
+        int user_id
+        int bank_connection_id
+        decimal amount
+        string description
+        timestamp transaction_date
+        timestamp inserted_at
+        timestamp updated_at
+    }
+    
+    DailyBudgets {
+        int id
+        int user_id
+        decimal base_amount
+        decimal saved_amount
+        date budget_date
+        timestamp inserted_at
+        timestamp updated_at
+    }
+```
+
+## Key Implementation Notes
+
+### Phoenix Backend
+
+1. Use Phoenix PubSub for real-time updates:
+   - Set up dedicated channels for transaction updates
+   - Implement presence tracking for active users
+   - Use Phoenix.Tracker for distributed state
+
+2. Implement Banking Integration:
+   - Use GenServer for managing banking connections
+   - Implement webhook handlers for transaction updates
+   - Use Task.Supervisor for background processing
+
+3. Performance Optimizations:
+   - Implement caching using ETS tables
+   - Use database indexes for common queries
+   - Implement connection pooling
+
+### Next.js Frontend
+
+1. State Management:
+   - Use Zustand for global state
+   - Implement optimistic updates for transactions
+   - Cache responses using Tanstack Query
+
+2. Real-time Features:
+   - Set up Phoenix Channels connection
+   - Implement reconnection logic
+   - Handle offline mode gracefully
+
+3. Performance:
+   - Implement proper code splitting
+   - Use Next.js Image optimization
+   - Implement proper caching strategies
+
+## Deployment Considerations
+
+1. Phoenix Backend:
+   - Use releases for production deployment
+   - Set up proper monitoring (Prometheus + Grafana)
+   - Implement proper logging
+
+2. Next.js Frontend:
+   - Use Vercel for deployment
+   - Set up proper error boundaries
+   - Implement analytics tracking
+
+3. Database:
+   - Set up proper backup strategy
+   - Implement database clustering
+   - Set up proper monitoring
+
+## Testing Strategy
+
+1. Backend:
+   - ExUnit for unit tests
+   - Phoenix.ChannelTest for channel tests
+   - Mox for mocking external services
+
+2. Frontend:
+   - Jest for unit tests
+   - React Testing Library for component tests
+   - Cypress for E2E tests
+
+## Security Considerations
+
+1. Implement proper CORS policies
+2. Use SSL/TLS for all connections
+3. Implement rate limiting
+4. Proper secrets management
+5. Regular security audits
+6. Implement proper error handling
+
+## Mobile Considerations
+
+1. Use React Native for iOS app
+2. Share business logic between web and mobile
+3. Implement proper push notifications
+4. Handle offline mode gracefully
+
+This prompt provides a foundation for building a robust, scalable budget tracking application using Phoenix and Next.js. The stack is chosen for its excellent real-time capabilities, strong typing, and excellent performance characteristics.
+
+Remember to:
+- Start with core features and expand gradually
+- Focus on real-time updates and performance
+- Implement proper error handling and logging
+- Follow security best practices
+- Write comprehensive tests
