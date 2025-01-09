@@ -1,0 +1,67 @@
+NetworkError when attempting to fetch resource. _app-51625f597e2ca901.js:16:5310
+[analytics.js] Failed to load Analytics.js TypeError: NetworkError when attempting to fetch resource. _app-51625f597e2ca901.js:16:5310
+Error sending segment performance metrics TypeError: NetworkError when attempting to fetch resource. _app-51625f597e2ca901.js:16:5310
+Request to access cookie or storage on “<URL>[guid]=NA&mids[muid]=34a3204f-94ef-4248-aa92-f1a03d20ddc10ed0cc&mids[sid]=NA&referrer=https%3A%2F%2Freplit.com%2F~&controllerId=__privateStripeController9651” was blocked because it came from a tracker and content blocking is enabled. 7
+Request to access cookie or storage on “<URL>” was blocked because it came from a tracker and content blocking is enabled. 2
+Partitioned cookie or storage access was provided to “https://m.stripe.network/inner.html#url=https%3A%2F%2Freplit.com%2F~&title=Home%20-%20Replit&referrer=&muid=34a3204f-94ef-4248-aa92-f1a03d20ddc10ed0cc&sid=NA&version=6&preview=false” because it is loaded in the third-party context and dynamic state partitioning is enabled.
+
+Blocked third party https://m.stripe.network/inner.html#url=https%3A%2F%2Freplit.com%2F~&title=Home%20-%20Replit&referrer=&muid=34a3204f-94ef-4248-aa92-f1a03d20ddc10ed0cc&sid=NA&version=6&preview=false from extracting canvas data. out-4.5.44.js:1:26884
+Request to access cookie or storage on “<URL>” was blocked because it came from a tracker and content blocking is enabled. 4
+Blocked third party https://m.stripe.network/inner.html#url=https%3A%2F%2Freplit.com%2F~&title=Home%20-%20Replit&referrer=&muid=34a3204f-94ef-4248-aa92-f1a03d20ddc10ed0cc&sid=NA&version=6&preview=false from extracting canvas data. out-4.5.44.js:1:26884
+Cookie warnings 5
+Cross-Origin Request Blocked: The Same Origin Policy disallows reading the remote resource at https://events.launchdarkly.com/events/diagnostic/62b35a865152ab14c5942820. (Reason: CORS request did not succeed). Status code: (null).
+2
+Uncaught (in promise) ApolloError: NetworkError when attempting to fetch resource.
+    NextJS 19
+4 _app-51625f597e2ca901.js:18:255278
+Uncaught (in promise) Timeout
+WebGL warning: drawElementsInstanced: Drawing to a destination rect smaller than the viewport rect. (This warning will only be given once)
+Cross-Origin Request Blocked: The Same Origin Policy disallows reading the remote resource at https://api.sorryapp.com/v1/pages/27c7b5fc. (Reason: CORS request did not succeed). Status code: (null).
+
+WebGL warning: drawElementsInstanced: Drawing to a destination rect smaller than the viewport rect. (This warning will only be given once) 2
+Uncaught (in promise) ApolloError: NetworkError when attempting to fetch resource.
+    NextJS 19
+_app-51625f597e2ca901.js:18:255278
+Feature Policy: Skipping unsupported feature name “accelerometer”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “ambient-light-sensor”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “autoplay”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “battery”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “encrypted-media”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “execution-while-not-rendered”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “execution-while-out-of-viewport”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “gyroscope”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “layout-animations”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “legacy-image-formats”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “magnetometer”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “midi”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “navigation-override”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “oversized-images”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “payment”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “picture-in-picture”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “publickey-credentials”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “sync-xhr”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “unoptimized-images”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “unsized-media”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “usb”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “xr-spatial-tracking”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “clipboard-read”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “clipboard-write”. framework-221d89436b66070f.js:1:72702
+Feature Policy: Skipping unsupported feature name “accelerometer”. framework-221d89436b66070f.js:1:159095
+Feature Policy: Skipping unsupported feature name “ambient-light-sensor”. framework-221d89436b66070f.js:1:159095
+Feature Policy: Skipping unsupported feature name “autoplay”. framework-221d89436b66070f.js:1:159095
+Feature Policy: Skipping unsupported feature name “battery”. framework-221d89436b66070f.js:1:159095
+Feature Policy: Skipping unsupported feature name “encrypted-media”. framework-221d89436b66070f.js:1:159095
+Feature Policy: Skipping unsupported feature name “execution-while-not-rendered”. framework-221d89436b66070f.js:1:159095
+Feature Policy: Skipping unsupported feature name “execution-while-out-of-viewport”. framework-221d89436b66070f.js:1:159095
+Feature Policy: Skipping unsupported feature name “gyroscope”. framework-221d89436b66070f.js:1:159095
+Feature Policy: Skipping unsupported feature name “layout-animations”. framework-221d89436b66070f.js:1:159095
+Feature Policy: Skipping unsupported feature name “legacy-image-formats”. framework-221d89436b66070f.js:1:159095
+Feature Policy: Skipping unsupported feature name “magnetometer”. framework-221d89436b66070f.js:1:159095
+Source map error: Error: request failed with status 404
+Stack in the worker:networkRequest@resource://devtools/client/shared/source-map-loader/utils/network-request.js:43:9
+
+Resource URL: https://cdn.replit.com/_next/static/css/83356ef69fac9da5.css
+Source Map URL: 83356ef69fac9da5.css.map
+
+​
+

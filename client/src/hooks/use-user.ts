@@ -3,6 +3,7 @@ import type { InsertUser, SelectUser } from "@db/schema";
 
 interface AuthResponse {
   user: SelectUser;
+  message: string;
 }
 
 async function handleRequest(
@@ -10,33 +11,51 @@ async function handleRequest(
   method: string,
   body?: Omit<InsertUser, "id" | "createdAt" | "dailyBudgetAmount">
 ): Promise<AuthResponse> {
-  const response = await fetch(url, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-    credentials: "include",
-  });
+  try {
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: "include",
+    });
 
-  if (!response.ok) {
-    throw new Error(await response.text());
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || data.message || response.statusText);
+    }
+
+    return data;
+  } catch (error: any) {
+    throw new Error(error.message || 'An unexpected error occurred');
   }
-
-  return response.json();
 }
 
 async function fetchUser(): Promise<SelectUser | null> {
-  const response = await fetch('/api/user', {
-    credentials: 'include'
-  });
+  try {
+    const response = await fetch('/api/user', {
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json',
+      }
+    });
 
-  if (!response.ok) {
     if (response.status === 401) {
       return null;
     }
-    throw new Error(await response.text());
-  }
 
-  return response.json();
+    if (!response.ok) {
+      throw new Error('Failed to fetch user data');
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    return null;
+  }
 }
 
 export function useUser() {
@@ -46,7 +65,7 @@ export function useUser() {
     queryKey: ['user'],
     queryFn: fetchUser,
     staleTime: Infinity,
-    retry: false
+    retry: false,
   });
 
   const loginMutation = useMutation({
