@@ -5,7 +5,7 @@ import session from "express-session";
 import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { users, type User } from "@db/schema";
+import { users, type User, type SelectUser } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 
@@ -28,13 +28,10 @@ const crypto = {
   },
 };
 
-// Define a type for serialized user without password
-type SafeUser = Omit<User, "password">;
-
 declare global {
   namespace Express {
     // eslint-disable-next-line @typescript-eslint/no-empty-interface
-    interface User extends SafeUser {}
+    interface User extends SelectUser {}
   }
 }
 
@@ -128,15 +125,17 @@ export function setupAuth(app: Express) {
 
       const hashedPassword = await crypto.hash(password);
 
-      const [newUser] = await db
+      const [user] = await db
         .insert(users)
         .values({
           username,
           password: hashedPassword,
+          dailyBudgetAmount: "50.00", // Default daily budget
         })
         .returning();
 
-      const { password: _, ...userWithoutPassword } = newUser;
+      // Remove password before sending response
+      const { password: _, ...userWithoutPassword } = user;
 
       req.logIn(userWithoutPassword, (err) => {
         if (err) {
@@ -150,7 +149,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: SafeUser | false, info: IVerifyOptions) => {
+    passport.authenticate("local", (err: any, user: SelectUser | false, info: IVerifyOptions) => {
       if (err) {
         return next(err);
       }

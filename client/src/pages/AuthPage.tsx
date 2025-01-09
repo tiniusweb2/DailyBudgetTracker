@@ -29,26 +29,14 @@ export default function AuthPage() {
     setIsLoading(true);
 
     try {
-      const result = await (isLogin ? login : register)({ username, password });
-      if (!result.ok) {
-        toast({
-          variant: "destructive",
-          title: "Authentication Error",
-          description: result.message || "Failed to authenticate",
-        });
-      } else {
-        toast({
-          title: "Success",
-          description: isLogin ? "Logged in successfully" : "Account created successfully",
-        });
-      }
+      await (isLogin ? login : register)({ username, password });
+      // No need to handle success toast here as the App.tsx will automatically redirect
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
         description: error.message || "An unexpected error occurred",
       });
-    } finally {
       setIsLoading(false);
     }
   };
