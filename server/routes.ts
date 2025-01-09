@@ -4,7 +4,8 @@ import { setupAuth } from "./auth";
 import { DrizzleTransactionRepository } from "./data/repositories/TransactionRepository";
 import { DrizzleUserRepository } from "./data/repositories/UserRepository";
 import { DrizzleDailyBudgetRepository } from "./data/repositories/DailyBudgetRepository";
-import { startOfDay, endOfDay, subDays } from "date-fns";
+import { DrizzlePlannedExpenseRepository } from "./data/repositories/PlannedExpenseRepository";
+import { startOfDay, endOfDay, subDays, differenceInDays } from "date-fns";
 import { AppError } from "./domain/errors/AppError";
 import { categoryPredictor } from "./services/CategoryPrediction";
 
@@ -13,6 +14,7 @@ export function registerRoutes(app: Express): Server {
   const transactionRepo = new DrizzleTransactionRepository();
   const userRepo = new DrizzleUserRepository();
   const dailyBudgetRepo = new DrizzleDailyBudgetRepository();
+  const plannedExpenseRepo = new DrizzlePlannedExpenseRepository();
 
   // Setup authentication routes
   setupAuth(app);
@@ -49,18 +51,83 @@ export function registerRoutes(app: Express): Server {
         b.date <= endOfDay(today)
       );
 
+      // Get planned expenses daily contribution
+      const plannedExpensesContribution = await plannedExpenseRepo.calculateDailyContributions(req.user!.id);
+
       res.json({
         transactions: recentTransactions,
         dailyBudget: {
-          available: dailyBudget.budgetAmount - dailyBudget.spent,
+          available: dailyBudget.budgetAmount - dailyBudget.spent - plannedExpensesContribution,
           spent: dailyBudget.spent,
-          saved: dailyBudget.saved
+          saved: dailyBudget.saved,
+          plannedExpensesContribution
         },
         dailyBudgets: recentBudgets.map(b => ({
           ...b,
           available: b.budgetAmount - b.spent
         }))
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Get all planned expenses
+  app.get("/api/planned-expenses", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const expenses = await plannedExpenseRepo.findByUserId(req.user!.id);
+      res.json(expenses);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Add new planned expense
+  app.post("/api/planned-expenses", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { name, amount, targetDate, categoryId } = req.body;
+
+      if (!name || typeof amount !== 'number' || !targetDate || !categoryId) {
+        throw AppError.badRequest("Invalid planned expense data");
+      }
+
+      const target = new Date(targetDate);
+      const daysUntilTarget = Math.max(1, differenceInDays(target, new Date()));
+      const dailyContribution = amount / daysUntilTarget;
+
+      const expense = await plannedExpenseRepo.create({
+        userId: req.user!.id,
+        name,
+        amount,
+        targetDate: target,
+        categoryId,
+        dailyContribution,
+        isCompleted: false
+      });
+
+      res.json(expense);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Update planned expense
+  app.patch("/api/planned-expenses/:id", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { name, amount, targetDate, isCompleted } = req.body;
+      const updates: any = {};
+
+      if (name !== undefined) updates.name = name;
+      if (amount !== undefined) updates.amount = amount;
+      if (targetDate !== undefined) {
+        updates.targetDate = new Date(targetDate);
+        const daysUntilTarget = Math.max(1, differenceInDays(updates.targetDate, new Date()));
+        updates.dailyContribution = amount / daysUntilTarget;
+      }
+      if (isCompleted !== undefined) updates.isCompleted = isCompleted;
+
+      const expense = await plannedExpenseRepo.update(parseInt(req.params.id), updates);
+      res.json(expense);
     } catch (error) {
       next(error);
     }

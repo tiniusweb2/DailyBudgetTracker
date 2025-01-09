@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, decimal } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, decimal, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 import { z } from "zod";
@@ -41,10 +41,24 @@ export const dailyBudgets = pgTable("daily_budgets", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Planned Expenses table for future expense planning
+export const plannedExpenses = pgTable("planned_expenses", {
+  id: serial("id").primaryKey(),
+  userId: serial("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  categoryId: serial("category_id").references(() => categories.id).notNull(),
+  name: text("name").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  targetDate: timestamp("target_date").notNull(), // When you want to have this expense by
+  isCompleted: boolean("is_completed").notNull().default(false),
+  dailyContribution: decimal("daily_contribution", { precision: 10, scale: 2 }).notNull(), // How much to save per day
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Define relationships
 export const userRelations = relations(users, ({ many }) => ({
   transactions: many(transactions),
   dailyBudgets: many(dailyBudgets),
+  plannedExpenses: many(plannedExpenses),
 }));
 
 export const transactionRelations = relations(transactions, ({ one }) => ({
@@ -60,6 +74,18 @@ export const transactionRelations = relations(transactions, ({ one }) => ({
 
 export const categoryRelations = relations(categories, ({ many }) => ({
   transactions: many(transactions),
+  plannedExpenses: many(plannedExpenses),
+}));
+
+export const plannedExpenseRelations = relations(plannedExpenses, ({ one }) => ({
+  user: one(users, {
+    fields: [plannedExpenses.userId],
+    references: [users.id],
+  }),
+  category: one(categories, {
+    fields: [plannedExpenses.categoryId],
+    references: [categories.id],
+  }),
 }));
 
 // Helper to convert decimal strings to numbers
@@ -84,6 +110,8 @@ export type Category = typeof categories.$inferSelect;
 export type InsertCategory = typeof categories.$inferInsert;
 export type DailyBudget = typeof dailyBudgets.$inferSelect;
 export type InsertDailyBudget = typeof dailyBudgets.$inferInsert;
+export type PlannedExpense = typeof plannedExpenses.$inferSelect;
+export type InsertPlannedExpense = typeof plannedExpenses.$inferInsert;
 
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
@@ -93,3 +121,5 @@ export const insertCategorySchema = createInsertSchema(categories);
 export const selectCategorySchema = createSelectSchema(categories);
 export const insertDailyBudgetSchema = createInsertSchema(dailyBudgets);
 export const selectDailyBudgetSchema = createSelectSchema(dailyBudgets);
+export const insertPlannedExpenseSchema = createInsertSchema(plannedExpenses);
+export const selectPlannedExpenseSchema = createSelectSchema(plannedExpenses);
