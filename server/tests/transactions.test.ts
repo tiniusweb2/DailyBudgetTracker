@@ -82,6 +82,29 @@ describe('Transactions', () => {
         spent: 20,
         saved: 0,
       }),
+
+  it('should handle invalid budget updates gracefully', async () => {
+    const nonExistentId = 999;
+    const updated = await db.updateDailyBudget(nonExistentId, {
+      spent: 30,
+      available: 40,
+    });
+    expect(updated).toBeUndefined();
+  });
+
+  it('should not create transaction with invalid user ID', async () => {
+    const invalidUserId = 999;
+    const transactionData = {
+      userId: invalidUserId,
+      amount: 25,
+      description: 'Test transaction',
+    };
+
+    const transaction = await db.createTransaction(transactionData);
+    const foundTransactions = await db.findTransactionsByUserId(invalidUserId);
+    expect(foundTransactions).toHaveLength(0);
+  });
+
       db.createDailyBudget({
         userId,
         date: sevenDaysAgo,
