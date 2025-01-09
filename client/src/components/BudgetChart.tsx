@@ -28,23 +28,43 @@ export default function BudgetChart() {
               <XAxis
                 dataKey="date"
                 tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                stroke="hsl(var(--muted-foreground))"
               />
-              <YAxis />
+              <YAxis 
+                stroke="hsl(var(--muted-foreground))"
+                tickFormatter={(value) => `$${value}`}
+              />
               <Tooltip
-                formatter={(value: number) => `$${value.toFixed(2)}`}
+                formatter={(value: number) => [`$${value.toFixed(2)}`, "Amount"]}
                 labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                contentStyle={{
+                  backgroundColor: "hsl(var(--background))",
+                  border: "1px solid hsl(var(--border))",
+                }}
               />
               <Line
                 type="monotone"
-                dataKey="available"
+                dataKey="budgetAmount"
+                name="Budget"
                 stroke="hsl(var(--primary))"
                 strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="spent"
+                name="Spent"
+                stroke="hsl(var(--destructive))"
+                strokeWidth={2}
+                dot={false}
               />
               <Line
                 type="monotone"
                 dataKey="saved"
+                name="Saved"
                 stroke="hsl(var(--success))"
                 strokeWidth={2}
+                dot={false}
               />
             </LineChart>
           </ResponsiveContainer>
