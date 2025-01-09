@@ -2,8 +2,6 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { db } from "@db";
-import { transactions, dailyBudgets, type User } from "@db/schema";
-import { eq, and, sql } from "drizzle-orm";
 import { startOfDay, endOfDay, subDays } from "date-fns";
 
 declare global {
@@ -11,7 +9,7 @@ declare global {
     interface User {
       id: number;
       username: string;
-      dailyBudgetAmount: string;
+      dailyBudgetAmount: number;
     }
   }
 }
@@ -27,64 +25,33 @@ export function registerRoutes(app: Express): Server {
 
     try {
       const today = new Date();
-      const [todayBudget] = await db
-        .select()
-        .from(dailyBudgets)
-        .where(
-          and(
-            eq(dailyBudgets.userId, req.user.id),
-            sql`DATE(${dailyBudgets.date}) = DATE(${sql.raw(today.toISOString())})`
-          )
-        )
-        .limit(1);
+      const sevenDaysAgo = subDays(today, 7);
 
-      const recentTransactions = await db
-        .select()
-        .from(transactions)
-        .where(
-          and(
-            eq(transactions.userId, req.user.id),
-            sql`${transactions.createdAt} >= ${sql.raw(startOfDay(subDays(today, 7)).toISOString())}`,
-            sql`${transactions.createdAt} <= ${sql.raw(endOfDay(today).toISOString())}`
-          )
-        )
-        .orderBy(transactions.createdAt);
+      // Get all transactions for the user
+      const transactions = await db.findTransactionsByUserId(req.user.id);
+      const recentTransactions = transactions.filter(t => 
+        t.createdAt >= startOfDay(sevenDaysAgo) && 
+        t.createdAt <= endOfDay(today)
+      );
 
-      const pastWeekBudgets = await db
-        .select()
-        .from(dailyBudgets)
-        .where(
-          and(
-            eq(dailyBudgets.userId, req.user.id),
-            sql`DATE(${dailyBudgets.date}) >= DATE(${sql.raw(subDays(today, 7).toISOString())})`,
-            sql`DATE(${dailyBudgets.date}) <= DATE(${sql.raw(today.toISOString())})`
-          )
-        )
-        .orderBy(dailyBudgets.date);
+      // Get or create today's budget
+      const todayBudget = await db.findDailyBudgetByUserIdAndDate(req.user.id, today);
 
-      // Convert decimal strings to numbers for the response
+      // Get past week's budgets
+      const pastWeekBudgets = await db.findDailyBudgetsByUserId(req.user.id);
+      const recentBudgets = pastWeekBudgets.filter(b => 
+        b.date >= startOfDay(sevenDaysAgo) && 
+        b.date <= endOfDay(today)
+      );
+
       res.json({
-        transactions: recentTransactions.map(t => ({
-          ...t,
-          amount: Number(t.amount)
-        })),
-        dailyBudget: todayBudget 
-          ? {
-              available: Number(todayBudget.available),
-              spent: Number(todayBudget.spent),
-              saved: Number(todayBudget.saved)
-            }
-          : {
-              available: Number(req.user.dailyBudgetAmount),
-              spent: 0,
-              saved: 0
-            },
-        dailyBudgets: pastWeekBudgets.map(b => ({
-          ...b,
-          available: Number(b.available),
-          spent: Number(b.spent),
-          saved: Number(b.saved)
-        }))
+        transactions: recentTransactions,
+        dailyBudget: todayBudget ?? {
+          available: req.user.dailyBudgetAmount,
+          spent: 0,
+          saved: 0
+        },
+        dailyBudgets: recentBudgets
       });
     } catch (error) {
       console.error('Failed to fetch transactions:', error);
@@ -101,53 +68,33 @@ export function registerRoutes(app: Express): Server {
     try {
       const { amount, description } = req.body;
 
-      const [transaction] = await db
-        .insert(transactions)
-        .values({
-          userId: req.user.id,
-          amount: amount.toString(),
-          description,
-        })
-        .returning();
+      // Create the transaction
+      const transaction = await db.createTransaction({
+        userId: req.user.id,
+        amount: Number(amount),
+        description,
+      });
 
       // Update or create today's budget
       const today = new Date();
-      const [existingBudget] = await db
-        .select()
-        .from(dailyBudgets)
-        .where(
-          and(
-            eq(dailyBudgets.userId, req.user.id),
-            sql`DATE(${dailyBudgets.date}) = DATE(${sql.raw(today.toISOString())})`
-          )
-        )
-        .limit(1);
+      const existingBudget = await db.findDailyBudgetByUserIdAndDate(req.user.id, today);
 
       if (existingBudget) {
-        await db
-          .update(dailyBudgets)
-          .set({
-            spent: (Number(existingBudget.spent) + Number(amount)).toString(),
-            available: (Number(existingBudget.available) - Number(amount)).toString(),
-          })
-          .where(eq(dailyBudgets.id, existingBudget.id));
+        await db.updateDailyBudget(existingBudget.id, {
+          spent: existingBudget.spent + Number(amount),
+          available: existingBudget.available - Number(amount),
+        });
       } else {
-        await db
-          .insert(dailyBudgets)
-          .values({
-            userId: req.user.id,
-            date: today,
-            available: (Number(req.user.dailyBudgetAmount) - Number(amount)).toString(),
-            spent: amount.toString(),
-            saved: '0',
-          });
+        await db.createDailyBudget({
+          userId: req.user.id,
+          date: today,
+          available: req.user.dailyBudgetAmount - Number(amount),
+          spent: Number(amount),
+          saved: 0,
+        });
       }
 
-      // Convert decimal strings to numbers for the response
-      res.json({
-        ...transaction,
-        amount: Number(transaction.amount)
-      });
+      res.json(transaction);
     } catch (error) {
       console.error('Failed to add transaction:', error);
       res.status(500).json({ error: "Failed to add transaction" });

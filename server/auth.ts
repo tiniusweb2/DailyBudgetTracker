@@ -5,9 +5,8 @@ import session from "express-session";
 import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { users, type User, type SelectUser } from "@db/schema";
+import { type User } from "@db/schema";
 import { db } from "@db";
-import { eq } from "drizzle-orm";
 
 const scryptAsync = promisify(scrypt);
 const crypto = {
@@ -31,7 +30,7 @@ const crypto = {
 declare global {
   namespace Express {
     // eslint-disable-next-line @typescript-eslint/no-empty-interface
-    interface User extends SelectUser {}
+    interface User extends Omit<User, "password"> {}
   }
 }
 
@@ -62,11 +61,7 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(eq(users.username, username))
-          .limit(1);
+        const user = await db.findUserByUsername(username);
 
         if (!user) {
           return done(null, false, { message: "Incorrect username." });
@@ -91,12 +86,7 @@ export function setupAuth(app: Express) {
 
   passport.deserializeUser(async (id: number, done) => {
     try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, id))
-        .limit(1);
-
+      const user = await db.findUserById(id);
       if (!user) {
         return done(null, false);
       }
@@ -113,26 +103,17 @@ export function setupAuth(app: Express) {
     try {
       const { username, password } = req.body;
 
-      const [existingUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.username, username))
-        .limit(1);
-
+      const existingUser = await db.findUserByUsername(username);
       if (existingUser) {
         return res.status(400).send("Username already exists");
       }
 
       const hashedPassword = await crypto.hash(password);
-
-      const [user] = await db
-        .insert(users)
-        .values({
-          username,
-          password: hashedPassword,
-          dailyBudgetAmount: "50.00", // Default daily budget
-        })
-        .returning();
+      const user = await db.createUser({
+        username,
+        password: hashedPassword,
+        dailyBudgetAmount: 50.00, // Default daily budget
+      });
 
       // Remove password before sending response
       const { password: _, ...userWithoutPassword } = user;
@@ -149,7 +130,7 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: SelectUser | false, info: IVerifyOptions) => {
+    passport.authenticate("local", (err: any, user: User | false, info: IVerifyOptions) => {
       if (err) {
         return next(err);
       }
