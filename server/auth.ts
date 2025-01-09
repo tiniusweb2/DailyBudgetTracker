@@ -23,6 +23,45 @@ declare global {
   }
 }
 
+export async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString("hex");
+  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
+  return `${buf.toString("hex")}.${salt}`;
+}
+
+export async function comparePasswords(
+  suppliedPassword: string,
+  storedPassword: string
+): Promise<boolean> {
+  try {
+    // Validate stored password format
+    if (!storedPassword || !storedPassword.includes('.')) {
+      console.error('Invalid stored password format');
+      return false;
+    }
+
+    const [hashedPassword, salt] = storedPassword.split(".");
+
+    // Validate both parts exist
+    if (!hashedPassword || !salt) {
+      console.error('Missing hash or salt component');
+      return false;
+    }
+
+    const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
+    const suppliedPasswordBuf = (await scryptAsync(
+      suppliedPassword,
+      salt,
+      64
+    )) as Buffer;
+
+    return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
+  } catch (error) {
+    console.error('Error comparing passwords:', error);
+    return false;
+  }
+}
+
 export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
@@ -190,25 +229,4 @@ export function setupAuth(app: Express) {
     }
     res.status(401).json({ error: "Not authenticated" });
   });
-}
-
-// Password hashing utilities
-async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
-}
-
-async function comparePasswords(
-  suppliedPassword: string,
-  storedPassword: string
-): Promise<boolean> {
-  const [hashedPassword, salt] = storedPassword.split(".");
-  const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
-  const suppliedPasswordBuf = (await scryptAsync(
-    suppliedPassword,
-    salt,
-    64
-  )) as Buffer;
-  return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
 }
