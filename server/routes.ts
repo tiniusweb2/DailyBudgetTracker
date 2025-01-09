@@ -1,96 +1,103 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
-import { db } from "@db";
+import { DrizzleTransactionRepository } from "./data/repositories/TransactionRepository";
+import { DrizzleUserRepository } from "./data/repositories/UserRepository";
 import { startOfDay, endOfDay, subDays } from "date-fns";
-
-// The User type in Express.User is already defined in auth.ts
-// We don't need to redeclare it here
+import { AppError } from "./domain/errors/AppError";
 
 export function registerRoutes(app: Express): Server {
+  // Initialize repositories
+  const transactionRepo = new DrizzleTransactionRepository();
+  const userRepo = new DrizzleUserRepository();
+
+  // Setup authentication routes
   setupAuth(app);
 
-  // Get user's transactions and budget data
-  app.get("/api/transactions", async (req, res) => {
+  // Middleware to ensure user is authenticated
+  const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
+      return res.status(401).json({ error: "Not authenticated" });
     }
+    next();
+  };
 
+  // Get user's transactions and budget data
+  app.get("/api/transactions", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const today = new Date();
       const sevenDaysAgo = subDays(today, 7);
 
       // Get all transactions for the user
-      const transactions = await db.findTransactionsByUserId(req.user.id);
+      const transactions = await transactionRepo.findByUserId(req.user!.id);
       const recentTransactions = transactions.filter(t => 
         t.createdAt >= startOfDay(sevenDaysAgo) && 
         t.createdAt <= endOfDay(today)
       );
 
-      // Get or create today's budget
-      const todayBudget = await db.findDailyBudgetByUserIdAndDate(req.user.id, today);
+      // Get user's current daily budget
+      const user = await userRepo.findById(req.user!.id);
+      if (!user) {
+        throw AppError.notFound("User not found");
+      }
 
-      // Get past week's budgets
-      const pastWeekBudgets = await db.findDailyBudgetsByUserId(req.user.id);
-      const recentBudgets = pastWeekBudgets.filter(b => 
-        b.date >= startOfDay(sevenDaysAgo) && 
-        b.date <= endOfDay(today)
-      );
+      const todaySpent = recentTransactions
+        .filter(t => t.createdAt >= startOfDay(today))
+        .reduce((sum, t) => sum + t.amount, 0);
 
       res.json({
         transactions: recentTransactions,
-        dailyBudget: todayBudget ?? {
-          available: req.user.dailyBudgetAmount,
-          spent: 0,
-          saved: 0
-        },
-        dailyBudgets: recentBudgets
+        dailyBudget: {
+          available: user.dailyBudgetAmount - todaySpent,
+          spent: todaySpent,
+          saved: 0 // To be implemented with savings goals feature
+        }
       });
     } catch (error) {
-      console.error('Failed to fetch transactions:', error);
-      res.status(500).json({ error: "Failed to fetch transactions" });
+      next(error);
     }
   });
 
   // Add new transaction
-  app.post("/api/transactions", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
-    }
-
+  app.post("/api/transactions", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { amount, description } = req.body;
 
-      // Create the transaction
-      const transaction = await db.createTransaction({
-        userId: req.user.id,
-        amount: Number(amount),
-        description,
-      });
-
-      // Update or create today's budget
-      const today = new Date();
-      const existingBudget = await db.findDailyBudgetByUserIdAndDate(req.user.id, today);
-
-      if (existingBudget) {
-        await db.updateDailyBudget(existingBudget.id, {
-          spent: existingBudget.spent + Number(amount),
-          available: existingBudget.available - Number(amount),
-        });
-      } else {
-        await db.createDailyBudget({
-          userId: req.user.id,
-          date: today,
-          available: req.user.dailyBudgetAmount - Number(amount),
-          spent: Number(amount),
-          saved: 0,
-        });
+      if (typeof amount !== 'number' || !description) {
+        throw AppError.badRequest("Invalid transaction data");
       }
+
+      const transaction = await transactionRepo.create({
+        userId: req.user!.id,
+        amount,
+        description
+      });
 
       res.json(transaction);
     } catch (error) {
-      console.error('Failed to add transaction:', error);
-      res.status(500).json({ error: "Failed to add transaction" });
+      next(error);
+    }
+  });
+
+  // Update daily budget amount
+  app.patch("/api/budget", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { amount } = req.body;
+
+      if (typeof amount !== 'number' || amount <= 0) {
+        throw AppError.badRequest("Invalid budget amount");
+      }
+
+      const user = await userRepo.update(req.user!.id, {
+        dailyBudgetAmount: amount
+      });
+
+      res.json({
+        message: "Budget updated successfully",
+        dailyBudgetAmount: user.dailyBudgetAmount
+      });
+    } catch (error) {
+      next(error);
     }
   });
 
