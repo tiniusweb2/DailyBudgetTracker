@@ -54,11 +54,24 @@ export const plannedExpenses = pgTable("planned_expenses", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Income Sources table for tracking different income streams
+export const incomeSources = pgTable("income_sources", {
+  id: serial("id").primaryKey(),
+  userId: serial("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  name: text("name").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  frequency: text("frequency").notNull(), // 'monthly', 'bi-weekly', 'weekly'
+  nextPaymentDate: timestamp("next_payment_date").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Define relationships
 export const userRelations = relations(users, ({ many }) => ({
   transactions: many(transactions),
   dailyBudgets: many(dailyBudgets),
   plannedExpenses: many(plannedExpenses),
+  incomeSources: many(incomeSources),
 }));
 
 export const transactionRelations = relations(transactions, ({ one }) => ({
@@ -112,6 +125,8 @@ export type DailyBudget = typeof dailyBudgets.$inferSelect;
 export type InsertDailyBudget = typeof dailyBudgets.$inferInsert;
 export type PlannedExpense = typeof plannedExpenses.$inferSelect;
 export type InsertPlannedExpense = typeof plannedExpenses.$inferInsert;
+export type IncomeSource = typeof incomeSources.$inferSelect;
+export type InsertIncomeSource = typeof incomeSources.$inferInsert;
 
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
@@ -123,3 +138,5 @@ export const insertDailyBudgetSchema = createInsertSchema(dailyBudgets);
 export const selectDailyBudgetSchema = createSelectSchema(dailyBudgets);
 export const insertPlannedExpenseSchema = createInsertSchema(plannedExpenses);
 export const selectPlannedExpenseSchema = createSelectSchema(plannedExpenses);
+export const insertIncomeSourceSchema = createInsertSchema(incomeSources);
+export const selectIncomeSourceSchema = createSelectSchema(incomeSources);
