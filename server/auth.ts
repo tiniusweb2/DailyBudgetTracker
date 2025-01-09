@@ -28,9 +28,13 @@ const crypto = {
   },
 };
 
+// Define a type for serialized user without password
+type SafeUser = Omit<User, "password">;
+
 declare global {
   namespace Express {
-    interface User extends User {}
+    // eslint-disable-next-line @typescript-eslint/no-empty-interface
+    interface User extends SafeUser {}
   }
 }
 
@@ -40,7 +44,11 @@ export function setupAuth(app: Express) {
     secret: process.env.REPL_ID || "secure-session-secret",
     resave: false,
     saveUninitialized: false,
-    cookie: {},
+    cookie: {
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      secure: app.get("env") === "production",
+      sameSite: "lax"
+    },
     store: new MemoryStore({
       checkPeriod: 86400000,
     }),
@@ -48,9 +56,6 @@ export function setupAuth(app: Express) {
 
   if (app.get("env") === "production") {
     app.set("trust proxy", 1);
-    sessionSettings.cookie = {
-      secure: true,
-    };
   }
 
   app.use(session(sessionSettings));
@@ -73,7 +78,10 @@ export function setupAuth(app: Express) {
         if (!isMatch) {
           return done(null, false, { message: "Incorrect password." });
         }
-        return done(null, user);
+
+        // Remove password from user object before serializing
+        const { password: _, ...userWithoutPassword } = user;
+        return done(null, userWithoutPassword);
       } catch (err) {
         return done(err);
       }
@@ -91,7 +99,14 @@ export function setupAuth(app: Express) {
         .from(users)
         .where(eq(users.id, id))
         .limit(1);
-      done(null, user);
+
+      if (!user) {
+        return done(null, false);
+      }
+
+      // Remove password from user object
+      const { password: _, ...userWithoutPassword } = user;
+      done(null, userWithoutPassword);
     } catch (err) {
       done(err);
     }
@@ -121,11 +136,13 @@ export function setupAuth(app: Express) {
         })
         .returning();
 
-      req.login(newUser, (err) => {
+      const { password: _, ...userWithoutPassword } = newUser;
+
+      req.logIn(userWithoutPassword, (err) => {
         if (err) {
           return next(err);
         }
-        return res.json(newUser);
+        return res.json(userWithoutPassword);
       });
     } catch (error) {
       next(error);
@@ -133,14 +150,14 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: Express.User, info: IVerifyOptions) => {
+    passport.authenticate("local", (err: any, user: SafeUser | false, info: IVerifyOptions) => {
       if (err) {
         return next(err);
       }
       if (!user) {
         return res.status(400).send(info.message);
       }
-      req.login(user, (err) => {
+      req.logIn(user, (err) => {
         if (err) {
           return next(err);
         }
