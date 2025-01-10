@@ -17,12 +17,7 @@ export class DrizzleDailyBudgetRepository implements DailyBudgetRepository {
       throw AppError.notFound('Daily budget not found');
     }
 
-    return {
-      ...budget,
-      budgetAmount: Number(budget.budgetAmount),
-      spent: Number(budget.spent),
-      saved: Number(budget.saved)
-    };
+    return this.convertToEntity(budget);
   }
 
   async findByUserIdAndDate(userId: number, date: Date): Promise<DailyBudget | null> {
@@ -39,12 +34,7 @@ export class DrizzleDailyBudgetRepository implements DailyBudgetRepository {
 
     if (!budget) return null;
 
-    return {
-      ...budget,
-      budgetAmount: Number(budget.budgetAmount),
-      spent: Number(budget.spent),
-      saved: Number(budget.saved)
-    };
+    return this.convertToEntity(budget);
   }
 
   async findByUserId(userId: number): Promise<DailyBudget[]> {
@@ -54,12 +44,7 @@ export class DrizzleDailyBudgetRepository implements DailyBudgetRepository {
       .where(eq(dailyBudgets.userId, userId))
       .orderBy(dailyBudgets.date);
 
-    return budgets.map(budget => ({
-      ...budget,
-      budgetAmount: Number(budget.budgetAmount),
-      spent: Number(budget.spent),
-      saved: Number(budget.saved)
-    }));
+    return budgets.map(this.convertToEntity);
   }
 
   async create(data: CreateDailyBudget): Promise<DailyBudget> {
@@ -74,12 +59,7 @@ export class DrizzleDailyBudgetRepository implements DailyBudgetRepository {
       })
       .returning();
 
-    return {
-      ...budget,
-      budgetAmount: Number(budget.budgetAmount),
-      spent: Number(budget.spent),
-      saved: Number(budget.saved)
-    };
+    return this.convertToEntity(budget);
   }
 
   async update(id: number, data: UpdateDailyBudget): Promise<DailyBudget> {
@@ -105,12 +85,7 @@ export class DrizzleDailyBudgetRepository implements DailyBudgetRepository {
       throw AppError.notFound('Daily budget not found');
     }
 
-    return {
-      ...budget,
-      budgetAmount: Number(budget.budgetAmount),
-      spent: Number(budget.spent),
-      saved: Number(budget.saved)
-    };
+    return this.convertToEntity(budget);
   }
 
   async getCurrentDayBudget(userId: number): Promise<DailyBudget> {
@@ -160,5 +135,14 @@ export class DrizzleDailyBudgetRepository implements DailyBudgetRepository {
       const spent = Number(budget.spent);
       return total + (budgetAmount - spent);
     }, 0);
+  }
+
+  private convertToEntity(record: typeof dailyBudgets.$inferSelect): DailyBudget {
+    return {
+      ...record,
+      budgetAmount: Number(record.budgetAmount),
+      spent: Number(record.spent),
+      saved: Number(record.saved)
+    };
   }
 }

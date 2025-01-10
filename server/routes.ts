@@ -6,20 +6,16 @@ import { DrizzleDailyBudgetRepository } from "./data/repositories/DailyBudgetRep
 import { DrizzlePlannedExpenseRepository } from "./data/repositories/PlannedExpenseRepository";
 import { startOfDay, endOfDay, subDays, differenceInDays } from "date-fns";
 import { AppError } from "./domain/errors/AppError";
-import { categoryPredictor } from "./services/CategoryPrediction";
-import { plaidService } from "./services/PlaidService";
-import { bankAccounts, incomeSources } from "@db/schema";
-import { db } from "@db";
-import { convertDecimalToNumber } from "@db/schema";
 import { requireAuth } from "./auth";
 import type { DailyBudgetStatus } from "./domain/entities/DailyBudget";
+import { db } from "@db";
 
 export function registerRoutes(app: Express): Server {
   // Initialize repositories
-  const transactionRepo = new DrizzleTransactionRepository();
   const userRepo = new DrizzleUserRepository();
   const dailyBudgetRepo = new DrizzleDailyBudgetRepository();
   const plannedExpenseRepo = new DrizzlePlannedExpenseRepository();
+  const transactionRepo = new DrizzleTransactionRepository();
 
   // Basic health check endpoint
   app.get("/api/health", (_req, res) => {
@@ -27,12 +23,11 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Protected routes - require authentication
-  app.use("/api/transactions", requireAuth);
   app.use("/api/budget", requireAuth);
+  app.use("/api/transactions", requireAuth);
   app.use("/api/planned-expenses", requireAuth);
-  app.use("/api/plaid", requireAuth);
 
-  // Get user's current budget status
+  // Get current budget status
   app.get("/api/budget/status", async (req, res, next) => {
     try {
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
@@ -40,14 +35,13 @@ export function registerRoutes(app: Express): Server {
       const plannedExpensesAmount = await plannedExpenseRepo.calculateDailyContributions(req.user!.id);
 
       // Calculate total available including rollover from previous days
-      const budget = convertDecimalToNumber(dailyBudget);
-      const totalAvailable = budget.budgetAmount + unspentFromPrevious - budget.spent - plannedExpensesAmount;
+      const totalAvailable = Number(dailyBudget.budgetAmount) + unspentFromPrevious - Number(dailyBudget.spent) - plannedExpensesAmount;
 
       const status: DailyBudgetStatus = {
-        dailyBudget: budget.budgetAmount,
+        dailyBudget: Number(dailyBudget.budgetAmount),
         available: totalAvailable,
-        spent: budget.spent,
-        saved: budget.saved,
+        spent: Number(dailyBudget.spent),
+        saved: Number(dailyBudget.saved),
         rollover: unspentFromPrevious,
         plannedExpenses: plannedExpensesAmount
       };
@@ -58,98 +52,16 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Get user's transactions and budget data
-  app.get("/api/transactions", async (req, res, next) => {
+  // Get budget history
+  app.get("/api/budget/history", async (req, res, next) => {
     try {
-      const today = new Date();
-      const sevenDaysAgo = subDays(today, 7);
-
-      const transactions = await transactionRepo.findByUserId(req.user!.id);
-      const recentTransactions = transactions.filter(t =>
-        t.createdAt >= startOfDay(sevenDaysAgo) &&
-        t.createdAt <= endOfDay(today)
-      );
-
-      const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
-      const plannedExpensesContribution = await plannedExpenseRepo.calculateDailyContributions(req.user!.id);
-
-      // Convert decimal strings to numbers for response
-      const convertedBudget = convertDecimalToNumber(dailyBudget);
-      const available = Number(convertedBudget.budgetAmount) - Number(convertedBudget.spent) - plannedExpensesContribution;
-
-      res.json({
-        transactions: recentTransactions.map(convertDecimalToNumber),
-        dailyBudget: {
-          available,
-          spent: Number(convertedBudget.spent),
-          saved: Number(convertedBudget.saved),
-          plannedExpensesContribution
-        }
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-
-  // Get all planned expenses
-  app.get("/api/planned-expenses", async (req, res, next) => {
-    try {
-      const expenses = await plannedExpenseRepo.findByUserId(req.user!.id);
-      res.json(expenses.map(convertDecimalToNumber));
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Add new planned expense
-  app.post("/api/planned-expenses", async (req, res, next) => {
-    try {
-      const { name, amount, targetDate, categoryId } = req.body;
-
-      if (!name || typeof amount !== 'number' || !targetDate || !categoryId) {
-        throw AppError.badRequest("Invalid planned expense data");
-      }
-
-      const target = new Date(targetDate);
-      const daysUntilTarget = Math.max(1, differenceInDays(target, new Date()));
-      const dailyContribution = amount / daysUntilTarget;
-
-      const expense = await plannedExpenseRepo.create({
-        userId: req.user!.id,
-        name,
-        amount: amount.toFixed(2),
-        targetDate: target,
-        categoryId,
-        dailyContribution: dailyContribution.toFixed(2),
-        isCompleted: false
-      });
-
-      res.json(convertDecimalToNumber(expense));
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Update planned expense
-  app.patch("/api/planned-expenses/:id", async (req, res, next) => {
-    try {
-      const { name, amount, targetDate, isCompleted } = req.body;
-      const updates: any = {};
-
-      if (name !== undefined) updates.name = name;
-      if (amount !== undefined) {
-        updates.amount = amount.toFixed(2);
-        if (targetDate !== undefined) {
-          updates.targetDate = new Date(targetDate);
-          const daysUntilTarget = Math.max(1, differenceInDays(updates.targetDate, new Date()));
-          updates.dailyContribution = (amount / daysUntilTarget).toFixed(2);
-        }
-      }
-      if (isCompleted !== undefined) updates.isCompleted = isCompleted;
-
-      const expense = await plannedExpenseRepo.update(parseInt(req.params.id), updates);
-      res.json(convertDecimalToNumber(expense));
+      const budgets = await dailyBudgetRepo.findByUserId(req.user!.id);
+      res.json(budgets.map(budget => ({
+        ...budget,
+        budgetAmount: Number(budget.budgetAmount),
+        spent: Number(budget.spent),
+        saved: Number(budget.saved)
+      })));
     } catch (error) {
       next(error);
     }
@@ -166,26 +78,26 @@ export function registerRoutes(app: Express): Server {
 
       // Update user's base daily budget amount
       await userRepo.update(req.user!.id, {
-        dailyBudgetAmount: amount
+        dailyBudgetAmount: amount.toFixed(2)
       });
 
       // Update current day's budget
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
       await dailyBudgetRepo.update(dailyBudget.id, {
-        budgetAmount: amount
+        budgetAmount: amount.toFixed(2)
       });
 
       // Get updated budget status
       const unspentFromPrevious = await dailyBudgetRepo.getUnspentAmount(req.user!.id);
       const plannedExpensesAmount = await plannedExpenseRepo.calculateDailyContributions(req.user!.id);
 
-      const totalAvailable = amount + unspentFromPrevious - dailyBudget.spent - plannedExpensesAmount;
+      const totalAvailable = amount + unspentFromPrevious - Number(dailyBudget.spent) - plannedExpensesAmount;
 
       const status: DailyBudgetStatus = {
         dailyBudget: amount,
         available: totalAvailable,
-        spent: dailyBudget.spent,
-        saved: dailyBudget.saved,
+        spent: Number(dailyBudget.spent),
+        saved: Number(dailyBudget.saved),
         rollover: unspentFromPrevious,
         plannedExpenses: plannedExpensesAmount
       };
@@ -199,29 +111,49 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Get Plaid link token
-  app.post("/api/plaid/link/token", async (req, res, next) => {
+  // Get user's transactions
+  app.get("/api/transactions", async (req, res, next) => {
     try {
-      const linkTokenData = await plaidService.createLinkToken(req.user!.id);
-      res.json(linkTokenData);
+      const today = new Date();
+      const sevenDaysAgo = subDays(today, 7);
+
+      const transactions = await transactionRepo.findByUserId(req.user!.id);
+      const recentTransactions = transactions.filter(t =>
+        t.createdAt >= startOfDay(sevenDaysAgo) &&
+        t.createdAt <= endOfDay(today)
+      );
+
+      const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
+      const plannedExpensesContribution = await plannedExpenseRepo.calculateDailyContributions(req.user!.id);
+
+      const available = Number(dailyBudget.budgetAmount) - Number(dailyBudget.spent) - plannedExpensesContribution;
+
+      res.json({
+        transactions: recentTransactions.map(t => ({
+          ...t,
+          amount: Number(t.amount)
+        })),
+        dailyBudget: {
+          available,
+          spent: Number(dailyBudget.spent),
+          saved: Number(dailyBudget.saved),
+          plannedExpensesContribution
+        }
+      });
     } catch (error) {
       next(error);
     }
   });
 
-  // Add new transaction with automatic categorization
+  // Create new transaction
   app.post("/api/transactions", async (req, res, next) => {
     try {
-      const { amount, description } = req.body;
+      const { amount, description, categoryId } = req.body;
 
-      if (typeof amount !== 'number' || !description) {
+      if (typeof amount !== 'number' || !description || !categoryId) {
         throw AppError.badRequest("Invalid transaction data");
       }
 
-      // Use ML to predict the category
-      const { categoryId, confidence } = await categoryPredictor.predictCategory(description);
-
-      // Create the transaction with predicted category
       const transaction = await transactionRepo.create({
         userId: req.user!.id,
         amount: amount.toFixed(2),
@@ -238,8 +170,8 @@ export function registerRoutes(app: Express): Server {
       });
 
       res.json({
-        ...convertDecimalToNumber(transaction),
-        categoryConfidence: confidence
+        ...transaction,
+        amount: Number(transaction.amount)
       });
     } catch (error) {
       next(error);
