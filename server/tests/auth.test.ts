@@ -14,8 +14,8 @@ describe('Authentication System', () => {
 
   beforeEach(async () => {
     // Clear all test data first
-    await db.delete(refreshTokens);
-    await db.delete(users);
+    await db.delete(refreshTokens).execute();
+    await db.delete(users).execute();
 
     // Setup express app with auth
     app = express();
@@ -139,7 +139,7 @@ describe('Authentication System', () => {
       expect(response.body.user.username).toBe('testuser');
 
       // Verify session cookies
-      const cookies = response.headers['set-cookie'];
+      const cookies = response.get('Set-Cookie');
       expect(cookies).toBeDefined();
       expect(cookies.some((c: string) => c.includes('financeapp.sid='))).toBe(true);
     });
@@ -202,7 +202,7 @@ describe('Authentication System', () => {
   });
 
   describe('Session Management', () => {
-    let authCookie: string;
+    let cookies: string[];
 
     beforeEach(async () => {
       // Create and login user
@@ -221,14 +221,13 @@ describe('Authentication System', () => {
           password: 'password123'
         });
 
-      authCookie = loginResponse.headers['set-cookie']
-        .find((c: string) => c.includes('financeapp.sid=')) || '';
+      cookies = loginResponse.get('Set-Cookie');
     });
 
     it('should allow access to protected routes with valid session', async () => {
       const response = await request
         .get('/api/user')
-        .set('Cookie', authCookie);
+        .set('Cookie', cookies);
 
       expect(response.status).toBe(200);
       expect(response.body.username).toBe('testuser');
@@ -253,7 +252,7 @@ describe('Authentication System', () => {
       const requests = Array(3).fill(null).map(() =>
         request
           .get('/api/user')
-          .set('Cookie', authCookie)
+          .set('Cookie', cookies)
       );
 
       const responses = await Promise.all(requests);
@@ -266,7 +265,7 @@ describe('Authentication System', () => {
   });
 
   describe('Logout', () => {
-    let authCookie: string;
+    let cookies: string[];
 
     beforeEach(async () => {
       // Create and login user
@@ -285,14 +284,13 @@ describe('Authentication System', () => {
           password: 'password123'
         });
 
-      authCookie = loginResponse.headers['set-cookie']
-        .find((c: string) => c.includes('financeapp.sid=')) || '';
+      cookies = loginResponse.get('Set-Cookie');
     });
 
     it('should successfully logout and invalidate session', async () => {
       const logoutResponse = await request
         .post('/api/logout')
-        .set('Cookie', authCookie);
+        .set('Cookie', cookies);
 
       expect(logoutResponse.status).toBe(200);
       expect(logoutResponse.body.message).toBe('Logged out successfully');
@@ -300,7 +298,7 @@ describe('Authentication System', () => {
       // Verify session is invalidated
       const protectedResponse = await request
         .get('/api/user')
-        .set('Cookie', authCookie);
+        .set('Cookie', cookies);
 
       expect(protectedResponse.status).toBe(401);
       expect(protectedResponse.body.message).toBe('Not authenticated');
@@ -318,7 +316,7 @@ describe('Authentication System', () => {
       // First logout
       await request
         .post('/api/logout')
-        .set('Cookie', authCookie);
+        .set('Cookie', cookies);
 
       // Try to login again
       const loginResponse = await request

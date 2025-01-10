@@ -19,6 +19,17 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
+      include: [
+        'server/**/*.{js,ts}',
+        'client/src/**/*.{js,ts,jsx,tsx}'
+      ],
+      exclude: [
+        '**/*.d.ts',
+        '**/*.test.{js,ts,jsx,tsx}',
+        '**/*.spec.{js,ts,jsx,tsx}',
+        '**/node_modules/**',
+        '**/dist/**'
+      ]
     }
   },
   resolve: {

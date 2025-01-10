@@ -2,25 +2,37 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { db } from "@db";
 import { incomeSources, bankAccounts } from "@db/schema";
 import { eq } from 'drizzle-orm';
-import { createTestUser } from './setup';
+import { createTestUser } from './utils/test-utils';
 import { addDays } from 'date-fns';
 import { plaidService } from '../services/PlaidService';
+
+// Mock the Plaid service
+vi.mock('../services/PlaidService', () => ({
+  plaidService: {
+    createLinkToken: vi.fn(),
+    exchangePublicToken: vi.fn(),
+    getIncome: vi.fn()
+  }
+}));
 
 describe('Income Sources', () => {
   let userId: number;
 
   beforeEach(async () => {
-    // Reset all mocks before each test
-    vi.resetAllMocks();
+    const user = await createTestUser();
+    userId = user.id;
 
     // Setup mock implementations
     vi.mocked(plaidService.createLinkToken).mockResolvedValue({
-      link_token: 'mock_link_token'
+      link_token: 'mock_link_token',
+      expiration: '2024-01-17',
+      request_id: 'mock_request_id'
     });
 
     vi.mocked(plaidService.exchangePublicToken).mockResolvedValue({
       access_token: 'mock_access_token',
-      item_id: 'mock_item_id'
+      item_id: 'mock_item_id',
+      request_id: 'mock_request_id'
     });
 
     vi.mocked(plaidService.getIncome).mockResolvedValue({
@@ -30,8 +42,12 @@ describe('Income Sources', () => {
         next_payment_date: new Date().toISOString().split('T')[0]
       }]
     });
-    const user = await createTestUser();
-    userId = user.id;
+  });
+
+  afterEach(async () => {
+    await db.delete(incomeSources).where(eq(incomeSources.userId, userId));
+    await db.delete(bankAccounts).where(eq(bankAccounts.userId, userId));
+    vi.resetAllMocks();
   });
 
   describe('Manual Income Sources', () => {
@@ -171,10 +187,6 @@ describe('Income Sources', () => {
   });
 
   describe('Bank Integration', () => {
-    afterEach(() => {
-      vi.resetAllMocks();
-    });
-
     it('should create a bank account link', async () => {
       const bankData = {
         userId,
@@ -239,16 +251,8 @@ describe('Income Sources', () => {
         new Error('Failed to fetch income information')
       );
 
-      const bank = {
-        userId,
-        plaidAccessToken: 'invalid_token',
-        plaidItemId: 'mock_item_id',
-        institutionName: 'Test Bank',
-        isActive: true
-      };
-
       await expect(
-        plaidService.getIncome(bank.plaidAccessToken)
+        plaidService.getIncome('invalid_token')
       ).rejects.toThrow('Failed to fetch income information');
     });
   });

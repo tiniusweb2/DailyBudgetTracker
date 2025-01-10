@@ -4,7 +4,7 @@ import { plannedExpenses } from "@db/schema";
 import { DrizzlePlannedExpenseRepository } from "../data/repositories/PlannedExpenseRepository";
 import { addDays, differenceInDays } from "date-fns";
 import { eq } from "drizzle-orm";
-import { createTestUser, createTestCategory } from './setup';
+import { createTestUser, createTestCategory } from './utils/test-utils';
 
 describe('Planned Expenses', () => {
   let userId: number;
@@ -19,21 +19,27 @@ describe('Planned Expenses', () => {
     userId = user.id;
     categoryId = category.id;
     repo = new DrizzlePlannedExpenseRepository();
+
+    // Clean up any existing test data
+    await db.delete(plannedExpenses)
+      .where(eq(plannedExpenses.userId, userId))
+      .execute();
   });
 
   describe('Expense Creation', () => {
     it('should create a planned expense with correct daily contribution', async () => {
       const targetDate = addDays(new Date(), 30); // 30 days from now
       const amount = 300; // $300 over 30 days = $10/day
+      const dailyAmount = (amount / 30).toFixed(2);
 
       const expense = await repo.create({
         userId,
         categoryId,
         name: 'New Laptop',
-        amount: amount.toString(),
+        amount: amount.toFixed(2),
         targetDate,
         isCompleted: false,
-        dailyContribution: (amount / 30).toString()
+        dailyContribution: dailyAmount
       });
 
       expect(expense).toBeDefined();
@@ -43,14 +49,13 @@ describe('Planned Expenses', () => {
     });
 
     it('should calculate total daily contributions for active expenses', async () => {
-      const today = new Date();
       const expenses = [
         {
           userId,
           categoryId,
           name: 'Vacation Fund',
           amount: "1000.00",
-          targetDate: addDays(today, 100),
+          targetDate: addDays(new Date(), 100),
           isCompleted: false,
           dailyContribution: "10.00" // $10/day
         },
@@ -59,7 +64,7 @@ describe('Planned Expenses', () => {
           categoryId,
           name: 'New Phone',
           amount: "600.00",
-          targetDate: addDays(today, 60),
+          targetDate: addDays(new Date(), 60),
           isCompleted: false,
           dailyContribution: "10.00" // $10/day
         }
@@ -127,7 +132,6 @@ describe('Planned Expenses', () => {
     });
 
     it('should find active expenses only', async () => {
-      const today = new Date();
       // Create test expenses with different states
       await db.insert(plannedExpenses).values([
         {
@@ -135,7 +139,7 @@ describe('Planned Expenses', () => {
           categoryId,
           name: 'Active Goal',
           amount: "1000.00",
-          targetDate: addDays(today, 30),
+          targetDate: addDays(new Date(), 30),
           isCompleted: false,
           dailyContribution: "33.33"
         },
@@ -144,7 +148,7 @@ describe('Planned Expenses', () => {
           categoryId,
           name: 'Completed Goal',
           amount: "500.00",
-          targetDate: addDays(today, 15),
+          targetDate: addDays(new Date(), 15),
           isCompleted: true,
           dailyContribution: "33.33"
         },
@@ -153,7 +157,7 @@ describe('Planned Expenses', () => {
           categoryId,
           name: 'Future Goal',
           amount: "1500.00",
-          targetDate: addDays(today, 45),
+          targetDate: addDays(new Date(), 45),
           isCompleted: false,
           dailyContribution: "33.33"
         }
