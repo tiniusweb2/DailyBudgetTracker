@@ -3,6 +3,8 @@ import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { setupVite, serveStatic, log } from "./vite";
+import { db } from "@db";
+import { sql } from "drizzle-orm";
 
 const app = express();
 
@@ -10,9 +12,6 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
-
-// Setup authentication
-setupAuth(app);
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -45,8 +44,16 @@ app.use((req, res, next) => {
   next();
 });
 
+// Initialize server with error handling
 (async () => {
   try {
+    // Verify database connection
+    await db.execute(sql.raw('SELECT 1'));
+    console.log("Database connection verified");
+
+    // Setup authentication
+    setupAuth(app);
+
     // Register routes
     const server = registerRoutes(app);
 

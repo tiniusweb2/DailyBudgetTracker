@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { InsertUser, SelectUser } from "@db/schema";
+import { useToast } from "@/hooks/use-toast";
 
 interface AuthResponse {
   user: SelectUser;
@@ -22,17 +23,12 @@ async function handleRequest(
       credentials: "include",
     });
 
-    if (!response) {
-      throw new Error('Network response was not received');
-    }
-
-    const data = await response.json();
-
     if (!response.ok) {
-      throw new Error(data.error || data.message || response.statusText);
+      const data = await response.json();
+      throw new Error(data.message || response.statusText);
     }
 
-    return data;
+    return response.json();
   } catch (error: any) {
     throw new Error(error.message || 'An unexpected error occurred');
   }
@@ -46,10 +42,6 @@ async function fetchUser(): Promise<SelectUser | null> {
         'Accept': 'application/json',
       }
     });
-
-    if (!response) {
-      throw new Error('Network response was not received');
-    }
 
     if (response.status === 401) {
       return null;
@@ -68,6 +60,7 @@ async function fetchUser(): Promise<SelectUser | null> {
 
 export function useUser() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: user, error, isLoading } = useQuery<SelectUser | null, Error>({
     queryKey: ['user'],
@@ -81,14 +74,36 @@ export function useUser() {
       handleRequest('/api/login', 'POST', userData),
     onSuccess: (data) => {
       queryClient.setQueryData(['user'], data.user);
+      toast({
+        title: "Success",
+        description: data.message,
+      });
     },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   });
 
   const logoutMutation = useMutation({
     mutationFn: () => handleRequest('/api/logout', 'POST'),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.setQueryData(['user'], null);
+      toast({
+        title: "Success",
+        description: data.message,
+      });
     },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   });
 
   const registerMutation = useMutation({
@@ -96,7 +111,18 @@ export function useUser() {
       handleRequest('/api/register', 'POST', userData),
     onSuccess: (data) => {
       queryClient.setQueryData(['user'], data.user);
+      toast({
+        title: "Success",
+        description: data.message,
+      });
     },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   });
 
   return {

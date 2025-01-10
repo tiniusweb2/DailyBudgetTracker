@@ -1,19 +1,15 @@
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { drizzle } from "drizzle-orm/neon-serverless";
+import { WebSocket } from "ws";
 import * as schema from "./schema";
 
 if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL environment variable is required");
+  throw new Error(
+    "DATABASE_URL must be set. Did you forget to provision a database?",
+  );
 }
 
-// Create the connection
-let db: ReturnType<typeof drizzle>;
-try {
-  const client = postgres(process.env.DATABASE_URL);
-  db = drizzle(client, { schema });
-} catch (error) {
-  console.error("Failed to initialize database:", error);
-  throw error;
-}
-
-export { db };
+export const db = drizzle({
+  connection: process.env.DATABASE_URL,
+  schema,
+  ws: WebSocket,
+});
