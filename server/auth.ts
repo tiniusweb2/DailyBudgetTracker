@@ -57,12 +57,14 @@ export function setupAuth(app: Express) {
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       httpOnly: true,
-      secure: false, // Set to false for development
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax'
     },
     store: new MemoryStore({
       checkPeriod: 86400000, // prune expired entries every 24h
+      ttl: 24 * 60 * 60 * 1000 // Match cookie maxAge
     }),
+    name: 'financeapp.sid' // Custom session cookie name
   };
 
   if (app.get("env") === "production") {
@@ -92,7 +94,9 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "Incorrect password." });
         }
 
-        return done(null, user);
+        // Don't send password to client
+        const { password: _, ...safeUser } = user;
+        return done(null, safeUser);
       } catch (err) {
         return done(err);
       }
@@ -115,7 +119,9 @@ export function setupAuth(app: Express) {
         return done(null, false);
       }
 
-      done(null, user);
+      // Don't send password to client
+      const { password: _, ...safeUser } = user;
+      done(null, safeUser);
     } catch (err) {
       done(err);
     }
@@ -149,13 +155,16 @@ export function setupAuth(app: Express) {
         })
         .returning();
 
-      req.logIn(user, (err) => {
+      // Don't send password to client
+      const { password: _, ...safeUser } = user;
+
+      req.logIn(safeUser, (err) => {
         if (err) {
           return next(err);
         }
         return res.json({
           message: "Registration successful",
-          user
+          user: safeUser
         });
       });
     } catch (error) {
