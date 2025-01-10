@@ -4,12 +4,21 @@ import { setupAuth } from "./auth";
 import { setupVite, serveStatic, log } from "./vite";
 import { db, verifyDatabaseConnection } from "@db";
 import { sql } from "drizzle-orm";
+import cors from "cors";
 
 const app = express();
 
 // Basic middleware setup
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Enable CORS in development
+if (app.get("env") === "development") {
+  app.use(cors({
+    origin: true,
+    credentials: true
+  }));
+}
 
 // Request logging middleware
 app.use((req, res, next) => {

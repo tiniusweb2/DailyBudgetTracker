@@ -57,12 +57,9 @@ describe('Bank Link Authentication', () => {
             access_token: 'mock_access_token',
             item_id: 'mock_item_id'
           }),
-          getIncome: vi.fn().mockResolvedValue({
-            income_streams: [{
-              monthly_income: 5000,
-              name: "Primary Income",
-              next_payment_date: new Date().toISOString().split('T')[0]
-            }]
+          getTransactions: vi.fn().mockResolvedValue({
+            transactions: [],
+            accounts: []
           })
         }
       }));
@@ -89,6 +86,7 @@ describe('Bank Link Authentication', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.link_token).toBe('mock_link_token');
+      expect(plaidService.createLinkToken).toHaveBeenCalledWith(userId);
     });
 
     it('should handle Plaid API errors', async () => {
@@ -114,12 +112,9 @@ describe('Bank Link Authentication', () => {
             access_token: 'mock_access_token',
             item_id: 'mock_item_id'
           }),
-          getIncome: vi.fn().mockResolvedValue({
-            income_streams: [{
-              monthly_income: 5000,
-              name: "Primary Income",
-              next_payment_date: new Date().toISOString().split('T')[0]
-            }]
+          getTransactions: vi.fn().mockResolvedValue({
+            transactions: [],
+            accounts: []
           })
         }
       }));
@@ -152,7 +147,17 @@ describe('Bank Link Authentication', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.message).toBe("Bank account linked successfully");
-      expect(response.body.bankAccount.institutionName).toBe("Test Bank");
+
+      // Verify bank account was saved
+      const accounts = await db
+        .select()
+        .from(bankAccounts)
+        .where(eq(bankAccounts.userId, userId));
+
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0].institutionName).toBe('Test Bank');
+      expect(accounts[0].plaidAccessToken).toBe('mock_access_token');
+      expect(accounts[0].plaidItemId).toBe('mock_item_id');
     });
 
     it('should validate required fields', async () => {
@@ -165,7 +170,7 @@ describe('Bank Link Authentication', () => {
         });
 
       expect(response.status).toBe(400);
-      expect(response.body.message).toBe("Missing required information");
+      expect(response.body.message).toContain('Invalid bank linking data');
     });
 
     it('should handle Plaid API errors during linking', async () => {
@@ -207,7 +212,7 @@ describe('Bank Link Authentication', () => {
       expect(response.status).toBe(200);
 
       // Verify both bank accounts exist in database
-      const accounts: BankAccount[] = await db
+      const accounts = await db
         .select()
         .from(bankAccounts)
         .where(eq(bankAccounts.userId, userId));
