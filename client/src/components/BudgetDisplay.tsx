@@ -16,7 +16,11 @@ export default function BudgetDisplay() {
     );
   }
 
-  const spentPercentage = budgetStatus ? (budgetStatus.spent / budgetStatus.dailyBudget) * 100 : 0;
+  if (!budgetStatus) {
+    return null;
+  }
+
+  const spentPercentage = (budgetStatus.spent / budgetStatus.dailyBudget) * 100;
 
   return (
     <Card>
@@ -31,7 +35,7 @@ export default function BudgetDisplay() {
               Available
             </span>
             <span className="text-3xl font-bold">
-              ${budgetStatus?.available.toFixed(2)}
+              ${budgetStatus.available.toFixed(2)}
             </span>
           </div>
 
@@ -42,7 +46,7 @@ export default function BudgetDisplay() {
                 Spent Today
               </span>
               <span className="text-lg text-destructive">
-                ${budgetStatus?.spent.toFixed(2)}
+                ${budgetStatus.spent.toFixed(2)}
               </span>
             </div>
             <Progress value={spentPercentage} className="h-2" />
@@ -54,11 +58,11 @@ export default function BudgetDisplay() {
               Saved
             </span>
             <span className="text-lg text-green-600">
-              ${budgetStatus?.saved.toFixed(2)}
+              ${budgetStatus.saved.toFixed(2)}
             </span>
           </div>
 
-          {budgetStatus?.rollover > 0 && (
+          {budgetStatus.rollover > 0 && (
             <div className="flex justify-between items-center pt-2 border-t">
               <span className="text-sm text-muted-foreground">
                 Rollover from Previous Days
