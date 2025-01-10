@@ -120,7 +120,12 @@ export default function CategoryCustomization() {
   const renderIcon = (iconName: string) => {
     const Icon = LucideIcons[iconName as keyof typeof LucideIcons] as React.ComponentType<{ className?: string }>;
     if (!Icon) return <Activity className="h-4 w-4" />;
-    return <Icon className="h-4 w-4" />;
+    try {
+      return <Icon className="h-4 w-4" />;
+    } catch (error) {
+      console.error(`Error rendering icon ${iconName}:`, error);
+      return <Activity className="h-4 w-4" />;
+    }
   };
 
   return (
@@ -227,9 +232,7 @@ export default function CategoryCustomization() {
                                 <div
                                   className={`h-4 w-4 rounded ${field.value}`}
                                 />
-                                <span>
-                                  {categoryColors.find((c) => c.value === field.value)?.name}
-                                </span>
+                                {categoryColors.find((c) => c.value === field.value)?.name}
                               </div>
                             </SelectValue>
                           </SelectTrigger>
@@ -241,7 +244,7 @@ export default function CategoryCustomization() {
                                 <div
                                   className={`h-4 w-4 rounded ${color.value}`}
                                 />
-                                <span>{color.name}</span>
+                                {color.name}
                               </div>
                             </SelectItem>
                           ))}
