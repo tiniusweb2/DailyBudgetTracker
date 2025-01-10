@@ -10,6 +10,7 @@ import { categoryPredictor } from "./services/CategoryPrediction";
 import { plaidService } from "./services/PlaidService";
 import { bankAccounts, incomeSources } from "@db/schema";
 import { db } from "@db";
+import { convertDecimalToNumber } from "@db/schema";
 
 export function registerRoutes(app: Express): Server {
   // Initialize repositories
@@ -52,12 +53,16 @@ export function registerRoutes(app: Express): Server {
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
       const plannedExpensesContribution = await plannedExpenseRepo.calculateDailyContributions(req.user!.id);
 
+      // Convert decimal strings to numbers for response
+      const convertedBudget = convertDecimalToNumber(dailyBudget);
+      const available = Number(convertedBudget.budgetAmount) - Number(convertedBudget.spent) - plannedExpensesContribution;
+
       res.json({
-        transactions: recentTransactions,
+        transactions: recentTransactions.map(convertDecimalToNumber),
         dailyBudget: {
-          available: dailyBudget.budgetAmount - dailyBudget.spent - plannedExpensesContribution,
-          spent: dailyBudget.spent,
-          saved: dailyBudget.saved,
+          available,
+          spent: Number(convertedBudget.spent),
+          saved: Number(convertedBudget.saved),
           plannedExpensesContribution
         }
       });
@@ -70,7 +75,7 @@ export function registerRoutes(app: Express): Server {
   app.get("/api/planned-expenses", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const expenses = await plannedExpenseRepo.findByUserId(req.user!.id);
-      res.json(expenses);
+      res.json(expenses.map(convertDecimalToNumber));
     } catch (error) {
       next(error);
     }
@@ -92,14 +97,14 @@ export function registerRoutes(app: Express): Server {
       const expense = await plannedExpenseRepo.create({
         userId: req.user!.id,
         name,
-        amount: amount.toString(),
+        amount: amount.toFixed(2),
         targetDate: target,
         categoryId,
-        dailyContribution: dailyContribution.toString(),
+        dailyContribution: dailyContribution.toFixed(2),
         isCompleted: false
       });
 
-      res.json(expense);
+      res.json(convertDecimalToNumber(expense));
     } catch (error) {
       next(error);
     }
@@ -112,16 +117,18 @@ export function registerRoutes(app: Express): Server {
       const updates: any = {};
 
       if (name !== undefined) updates.name = name;
-      if (amount !== undefined) updates.amount = amount.toString();
-      if (targetDate !== undefined) {
-        updates.targetDate = new Date(targetDate);
-        const daysUntilTarget = Math.max(1, differenceInDays(updates.targetDate, new Date()));
-        updates.dailyContribution = (amount / daysUntilTarget).toString();
+      if (amount !== undefined) {
+        updates.amount = amount.toFixed(2);
+        if (targetDate !== undefined) {
+          updates.targetDate = new Date(targetDate);
+          const daysUntilTarget = Math.max(1, differenceInDays(updates.targetDate, new Date()));
+          updates.dailyContribution = (amount / daysUntilTarget).toFixed(2);
+        }
       }
       if (isCompleted !== undefined) updates.isCompleted = isCompleted;
 
       const expense = await plannedExpenseRepo.update(parseInt(req.params.id), updates);
-      res.json(expense);
+      res.json(convertDecimalToNumber(expense));
     } catch (error) {
       next(error);
     }
@@ -142,7 +149,7 @@ export function registerRoutes(app: Express): Server {
       // Create the transaction with predicted category
       const transaction = await transactionRepo.create({
         userId: req.user!.id,
-        amount: amount.toString(),
+        amount: amount.toFixed(2),
         description,
         categoryId
       });
@@ -150,11 +157,11 @@ export function registerRoutes(app: Express): Server {
       // Update daily budget spent amount
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
       await dailyBudgetRepo.update(dailyBudget.id, {
-        spent: (Number(dailyBudget.spent) + amount).toString()
+        spent: (Number(dailyBudget.spent) + amount).toFixed(2)
       });
 
       res.json({
-        ...transaction,
+        ...convertDecimalToNumber(transaction),
         categoryConfidence: confidence
       });
     } catch (error) {
@@ -172,13 +179,13 @@ export function registerRoutes(app: Express): Server {
       }
 
       await userRepo.update(req.user!.id, {
-        dailyBudgetAmount: amount.toString()
+        dailyBudgetAmount: amount.toFixed(2)
       });
 
       // Update current day's budget amount
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
       await dailyBudgetRepo.update(dailyBudget.id, {
-        budgetAmount: amount.toString()
+        budgetAmount: amount.toFixed(2)
       });
 
       res.json({
@@ -219,6 +226,7 @@ export function registerRoutes(app: Express): Server {
           plaidAccessToken: exchangeResponse.access_token,
           plaidItemId: exchangeResponse.item_id,
           institutionName,
+          isActive: true
         })
         .returning();
 
@@ -233,7 +241,7 @@ export function registerRoutes(app: Express): Server {
             .values({
               userId: req.user!.id,
               name: `${institutionName} - ${stream.name || 'Income'}`,
-              amount: stream.monthly_income.toString(),
+              amount: stream.monthly_income.toFixed(2),
               frequency: 'monthly',
               nextPaymentDate: new Date(stream.next_payment_date || Date.now()),
               isActive: true,
