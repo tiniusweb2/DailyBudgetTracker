@@ -1,34 +1,22 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { db } from "../db";
-import { users, incomeSources, bankAccounts } from "../db/schema";
-import { plaidService } from '../services/PlaidService';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { db } from "@db";
+import { users, incomeSources, bankAccounts, type IncomeSource, type InsertIncomeSource } from "@db/schema";
 import { eq } from 'drizzle-orm';
+import { createTestUser } from './setup';
+import { addDays } from 'date-fns';
+import { plaidService } from '../services/PlaidService';
 
 describe('Income Sources', () => {
   let userId: number;
 
   beforeEach(async () => {
-    // Clear income sources and bank accounts first due to foreign key constraints
-    await db.delete(incomeSources);
-    await db.delete(bankAccounts);
-    await db.delete(users);
-
-    // Create a test user
-    const [user] = await db
-      .insert(users)
-      .values({
-        username: `testuser_${Date.now()}`,
-        password: 'password123',
-        dailyBudgetAmount: "50.00",
-      })
-      .returning();
-
+    const user = await createTestUser();
     userId = user.id;
   });
 
   describe('Manual Income Sources', () => {
     it('should create a manual income source', async () => {
-      const incomeData = {
+      const incomeData: InsertIncomeSource = {
         userId,
         name: 'Monthly Salary',
         amount: "5000.00",
@@ -49,7 +37,7 @@ describe('Income Sources', () => {
     });
 
     it('should retrieve all income sources for a user', async () => {
-      const incomeData = [
+      const incomeData: InsertIncomeSource[] = [
         {
           userId,
           name: 'Primary Job',
@@ -70,7 +58,7 @@ describe('Income Sources', () => {
 
       await db.insert(incomeSources).values(incomeData);
 
-      const sources = await db
+      const sources: IncomeSource[] = await db
         .select()
         .from(incomeSources)
         .where(eq(incomeSources.userId, userId));
@@ -81,7 +69,7 @@ describe('Income Sources', () => {
     });
 
     it('should calculate daily income correctly', async () => {
-      const incomeData = [
+      const incomeData: InsertIncomeSource[] = [
         {
           userId,
           name: 'Monthly Salary',
@@ -127,6 +115,71 @@ describe('Income Sources', () => {
       }, 0);
 
       expect(calculatedDailyIncome).toBeCloseTo(expectedDailyIncome, 2);
+    });
+
+    it('should handle inactive income sources', async () => {
+      const incomeData: InsertIncomeSource[] = [
+        {
+          userId,
+          name: 'Active Income',
+          amount: "3000.00",
+          frequency: 'monthly',
+          nextPaymentDate: new Date(),
+          isActive: true
+        },
+        {
+          userId,
+          name: 'Inactive Income',
+          amount: "2000.00",
+          frequency: 'monthly',
+          nextPaymentDate: addDays(new Date(), 30),
+          isActive: false
+        }
+      ];
+
+      await db.insert(incomeSources).values(incomeData);
+
+      const activeSources = await db
+        .select()
+        .from(incomeSources)
+        .where(eq(incomeSources.userId, userId))
+        .where(eq(incomeSources.isActive, true));
+
+      expect(activeSources).toHaveLength(1);
+      expect(activeSources[0].name).toBe('Active Income');
+    });
+
+    it('should handle floating point precision in amount calculations', async () => {
+      const incomeData: InsertIncomeSource = {
+        userId,
+        name: 'Precise Income',
+        amount: "1234.56",
+        frequency: 'monthly',
+        nextPaymentDate: new Date(),
+        isActive: true
+      };
+
+      const [income] = await db
+        .insert(incomeSources)
+        .values(incomeData)
+        .returning();
+
+      expect(income.amount).toBe("1234.56");
+      expect(Number(income.amount)).toBe(1234.56);
+    });
+
+    it('should validate required fields', async () => {
+      const invalidData: Partial<InsertIncomeSource> = {
+        userId,
+        name: 'Invalid Income'
+        // Missing required fields: amount, frequency, nextPaymentDate
+      };
+
+      await expect(db
+        .insert(incomeSources)
+        .values(invalidData as InsertIncomeSource)
+        .returning()
+      ).rejects.toThrow();
     });
   });
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { db } from "../db";
-import { users, categories, plannedExpenses } from "../db/schema";
+import { db } from "@db";
+import { users, categories, plannedExpenses } from "@db/schema";
 import { DrizzlePlannedExpenseRepository } from "../data/repositories/PlannedExpenseRepository";
 import { addDays } from "date-fns";
 import { eq } from "drizzle-orm";

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { db } from "../db";
-import { users, bankAccounts, type BankAccount } from "../db/schema";
+import { db } from "@db";
+import { users, bankAccounts, type BankAccount } from "@db/schema";
 import { plaidService } from '../services/PlaidService';
 import express from 'express';
 import { setupAuth } from '../auth';
