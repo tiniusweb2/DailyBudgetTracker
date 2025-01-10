@@ -1,6 +1,7 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import BudgetDisplay from "@/components/BudgetDisplay";
 import BudgetSetupForm from "@/components/BudgetSetupForm";
+import SpendingInsights from "@/components/SpendingInsights";
 import { useBudget } from "@/hooks/use-budget";
 import { Loader2 } from "lucide-react";
 
@@ -27,8 +28,13 @@ export default function BudgetDashboard() {
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-8">Budget Dashboard</h1>
       <div className="grid gap-8 md:grid-cols-2">
-        <BudgetDisplay />
-        <BudgetSetupForm />
+        <div className="space-y-8">
+          <BudgetDisplay />
+          <SpendingInsights />
+        </div>
+        <div>
+          <BudgetSetupForm />
+        </div>
       </div>
     </div>
   );
