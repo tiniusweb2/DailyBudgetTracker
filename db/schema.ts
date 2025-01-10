@@ -66,12 +66,11 @@ export const incomeSources = pgTable("income_sources", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Bank Accounts table for storing Plaid integration data
+// Bank Accounts table for storing Tink integration data
 export const bankAccounts = pgTable("bank_accounts", {
   id: serial("id").primaryKey(),
   userId: serial("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
-  plaidAccessToken: text("plaid_access_token").notNull(),
-  plaidItemId: text("plaid_item_id").notNull(),
+  tinkAccessToken: text("tink_access_token").notNull(),
   institutionName: text("institution_name").notNull(),
   lastSync: timestamp("last_sync"),
   isActive: boolean("is_active").notNull().default(true),

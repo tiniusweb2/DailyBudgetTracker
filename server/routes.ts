@@ -8,7 +8,7 @@ import { startOfDay, endOfDay, subDays } from "date-fns";
 import { AppError } from "./domain/errors/AppError";
 import { requireAuth } from "./auth";
 import type { DailyBudgetStatus } from "./domain/entities/DailyBudget";
-import { plaidService } from "./services/PlaidService";
+import { tinkService } from "./services/TinkService";
 import { db } from "@db";
 import { bankAccounts } from "@db/schema";
 
@@ -28,7 +28,7 @@ export function registerRoutes(app: Express): Server {
   app.use("/api/budget", requireAuth);
   app.use("/api/transactions", requireAuth);
   app.use("/api/planned-expenses", requireAuth);
-  app.use("/api/plaid", requireAuth);
+  app.use("/api/tink", requireAuth);
 
   // Daily Budget Routes
   app.get("/api/budget/status", async (req, res, next) => {
@@ -114,44 +114,46 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Plaid routes
-  app.post("/api/plaid/link/token", async (req, res, next) => {
+  // Tink routes
+  app.post("/api/tink/link/token", async (req, res, next) => {
     try {
-      const linkTokenResponse = await plaidService.createLinkToken(req.user!.id);
-      res.json(linkTokenResponse);
+      const authData = await tinkService.createAuthorizationLink(req.user!.id);
+      res.json(authData);
     } catch (error) {
       next(error);
     }
   });
 
-  app.post("/api/plaid/link/bank", async (req, res, next) => {
+  app.post("/api/tink/link/bank", async (req, res, next) => {
     try {
-      const { publicToken, institutionName } = req.body;
-      const exchangeResponse = await plaidService.exchangePublicToken(publicToken);
+      const { authorizationCode, institutionName } = req.body;
 
-      // Save the access token and item ID
+      if (!authorizationCode || !institutionName) {
+        throw AppError.badRequest("Invalid bank linking data");
+      }
+
+      // Exchange authorization code for access token
+      const accessToken = await tinkService.exchangeAuthorizationCode(authorizationCode);
+
+      // Save the bank account information
       await db.insert(bankAccounts).values({
         userId: req.user!.id,
-        plaidAccessToken: exchangeResponse.access_token,
-        plaidItemId: exchangeResponse.item_id,
+        tinkAccessToken: accessToken,
         institutionName,
         isActive: true,
       });
 
       // Get initial transaction history
       const now = new Date();
-      const thirtyDaysAgo = subDays(now, 30);
-      await plaidService.getTransactions(
-        exchangeResponse.access_token,
-        thirtyDaysAgo.toISOString().split('T')[0],
-        now.toISOString().split('T')[0]
-      );
+      const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+      await tinkService.getTransactions(accessToken, 100); // Get first 100 transactions
 
       res.json({ message: "Bank account linked successfully" });
     } catch (error) {
       next(error);
     }
   });
+
   // Get user's transactions
   app.get("/api/transactions", async (req, res, next) => {
     try {
