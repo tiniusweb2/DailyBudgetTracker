@@ -31,7 +31,7 @@ describe('CategoryCustomization', () => {
   beforeEach(() => {
     // Reset mocks before each test
     mockFetch.mockReset();
-    
+
     // Mock the categories API response
     mockFetch.mockImplementation((url) => {
       if (url === '/api/categories') {
@@ -48,12 +48,12 @@ describe('CategoryCustomization', () => {
 
   it('renders the component correctly', async () => {
     render(<CategoryCustomization />, { wrapper: createWrapper() });
-    
+
     // Check for main elements
     expect(screen.getByText('Category Customization')).toBeInTheDocument();
     expect(screen.getByText('Create and customize your budget categories')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('e.g., Groceries')).toBeInTheDocument();
-    
+
     // Wait for categories to load
     await waitFor(() => {
       expect(screen.getByText('Groceries')).toBeInTheDocument();
@@ -89,7 +89,7 @@ describe('CategoryCustomization', () => {
 
     // Fill out the form
     await user.type(screen.getByPlaceholderText('e.g., Groceries'), 'Shopping');
-    
+
     // Submit the form
     const submitButton = screen.getByText('Add Category');
     await user.click(submitButton);
@@ -120,6 +120,25 @@ describe('CategoryCustomization', () => {
     // Verify error handling
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledWith('/api/categories', expect.any(Object));
+    });
+  });
+
+  it('allows icon and color selection', async () => {
+    const user = userEvent.setup();
+    render(<CategoryCustomization />, { wrapper: createWrapper() });
+
+    // Open icon select
+    const iconTrigger = screen.getByLabelText('Icon');
+    await user.click(iconTrigger);
+
+    // Open color select
+    const colorTrigger = screen.getByLabelText('Color');
+    await user.click(colorTrigger);
+
+    // Verify select menus are visible
+    await waitFor(() => {
+      expect(screen.getByText('Select an icon')).toBeInTheDocument();
+      expect(screen.getByText('Select a color')).toBeInTheDocument();
     });
   });
 });

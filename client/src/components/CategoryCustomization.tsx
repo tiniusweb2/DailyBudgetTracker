@@ -118,7 +118,11 @@ export default function CategoryCustomization() {
     createCategory.mutate(data);
   };
 
-  const SelectedIcon = Icons[selectedIcon as keyof typeof Icons] as React.ComponentType<any>;
+  // Helper function to render icon component
+  const renderIcon = (iconName: string) => {
+    const IconComponent = Icons[iconName as keyof typeof Icons] as React.ComponentType<any>;
+    return IconComponent ? <IconComponent className="h-4 w-4" /> : null;
+  };
 
   return (
     <Card>
@@ -139,20 +143,17 @@ export default function CategoryCustomization() {
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               ) : categories.length > 0 ? (
-                categories.map((category) => {
-                  const CategoryIcon = Icons[category.icon as keyof typeof Icons] as React.ComponentType<any>;
-                  return (
-                    <div
-                      key={category.id}
-                      className="flex items-center gap-2 p-2 rounded-lg border"
-                    >
-                      <div className={`p-2 rounded-md ${category.color}`}>
-                        <CategoryIcon className="h-4 w-4 text-white" />
-                      </div>
-                      <span>{category.name}</span>
+                categories.map((category) => (
+                  <div
+                    key={category.id}
+                    className="flex items-center gap-2 p-2 rounded-lg border"
+                  >
+                    <div className={`p-2 rounded-md ${category.color}`}>
+                      {renderIcon(category.icon)}
                     </div>
-                  );
-                })
+                    <span>{category.name}</span>
+                  </div>
+                ))
               ) : (
                 <p className="col-span-2 text-center text-sm text-muted-foreground">
                   No categories yet. Create your first one below.
@@ -196,27 +197,24 @@ export default function CategoryCustomization() {
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue>
-                              <div className="flex items-center gap-2">
-                                {SelectedIcon && (
-                                  <SelectedIcon className="h-4 w-4" />
-                                )}
-                                <span>{selectedIcon}</span>
-                              </div>
+                              {field.value && (
+                                <div className="flex items-center gap-2">
+                                  {renderIcon(field.value)}
+                                  <span>{field.value}</span>
+                                </div>
+                              )}
                             </SelectValue>
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent className="h-[300px]">
-                          {availableIcons.map((icon) => {
-                            const Icon = Icons[icon as keyof typeof Icons] as React.ComponentType<any>;
-                            return (
-                              <SelectItem key={icon} value={icon}>
-                                <div className="flex items-center gap-2">
-                                  <Icon className="h-4 w-4" />
-                                  <span>{icon}</span>
-                                </div>
-                              </SelectItem>
-                            );
-                          })}
+                          {availableIcons.map((icon) => (
+                            <SelectItem key={icon} value={icon}>
+                              <div className="flex items-center gap-2">
+                                {renderIcon(icon)}
+                                <span>{icon}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />
