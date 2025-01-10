@@ -118,7 +118,10 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/tink/link/token", async (req, res, next) => {
     try {
       const authData = await tinkService.createAuthorizationLink(req.user!.id);
-      res.json(authData);
+      res.json({
+        status: "success",
+        data: authData
+      });
     } catch (error) {
       next(error);
     }
@@ -144,11 +147,12 @@ export function registerRoutes(app: Express): Server {
       });
 
       // Get initial transaction history
-      const now = new Date();
-      const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
-      await tinkService.getTransactions(accessToken, 100); // Get first 100 transactions
+      await tinkService.getTransactions(accessToken, 100);
 
-      res.json({ message: "Bank account linked successfully" });
+      res.json({
+        status: "success",
+        message: "Bank account linked successfully"
+      });
     } catch (error) {
       next(error);
     }
