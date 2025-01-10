@@ -30,46 +30,7 @@ export function registerRoutes(app: Express): Server {
   app.use("/api/planned-expenses", requireAuth);
   app.use("/api/plaid", requireAuth);
 
-  // Plaid routes
-  app.post("/api/plaid/link/token", async (req, res, next) => {
-    try {
-      const linkTokenResponse = await plaidService.createLinkToken(req.user!.id);
-      res.json(linkTokenResponse);
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.post("/api/plaid/link/bank", async (req, res, next) => {
-    try {
-      const { publicToken, institutionName } = req.body;
-      const exchangeResponse = await plaidService.exchangePublicToken(publicToken);
-
-      // Save the access token and item ID
-      await db.insert(bankAccounts).values({
-        userId: req.user!.id,
-        plaidAccessToken: exchangeResponse.access_token,
-        plaidItemId: exchangeResponse.item_id,
-        institutionName,
-        isActive: true,
-      });
-
-      // Get initial transaction history
-      const now = new Date();
-      const thirtyDaysAgo = subDays(now, 30);
-      await plaidService.getTransactions(
-        exchangeResponse.access_token,
-        thirtyDaysAgo.toISOString().split('T')[0],
-        now.toISOString().split('T')[0]
-      );
-
-      res.json({ message: "Bank account linked successfully" });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Get current budget status
+  // Daily Budget Routes
   app.get("/api/budget/status", async (req, res, next) => {
     try {
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
@@ -120,13 +81,13 @@ export function registerRoutes(app: Express): Server {
 
       // Update user's base daily budget amount
       await userRepo.update(req.user!.id, {
-        dailyBudgetAmount: amount.toFixed(2)
+        dailyBudgetAmount: amount
       });
 
       // Update current day's budget
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
       await dailyBudgetRepo.update(dailyBudget.id, {
-        budgetAmount: amount.toFixed(2)
+        budgetAmount: amount
       });
 
       // Get updated budget status
@@ -153,6 +114,44 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Plaid routes
+  app.post("/api/plaid/link/token", async (req, res, next) => {
+    try {
+      const linkTokenResponse = await plaidService.createLinkToken(req.user!.id);
+      res.json(linkTokenResponse);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/plaid/link/bank", async (req, res, next) => {
+    try {
+      const { publicToken, institutionName } = req.body;
+      const exchangeResponse = await plaidService.exchangePublicToken(publicToken);
+
+      // Save the access token and item ID
+      await db.insert(bankAccounts).values({
+        userId: req.user!.id,
+        plaidAccessToken: exchangeResponse.access_token,
+        plaidItemId: exchangeResponse.item_id,
+        institutionName,
+        isActive: true,
+      });
+
+      // Get initial transaction history
+      const now = new Date();
+      const thirtyDaysAgo = subDays(now, 30);
+      await plaidService.getTransactions(
+        exchangeResponse.access_token,
+        thirtyDaysAgo.toISOString().split('T')[0],
+        now.toISOString().split('T')[0]
+      );
+
+      res.json({ message: "Bank account linked successfully" });
+    } catch (error) {
+      next(error);
+    }
+  });
   // Get user's transactions
   app.get("/api/transactions", async (req, res, next) => {
     try {
@@ -166,9 +165,9 @@ export function registerRoutes(app: Express): Server {
       );
 
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
-      const plannedExpensesContribution = await plannedExpenseRepo.calculateDailyContributions(req.user!.id);
+      const plannedExpensesAmount = await plannedExpenseRepo.calculateDailyContributions(req.user!.id);
 
-      const available = Number(dailyBudget.budgetAmount) - Number(dailyBudget.spent) - plannedExpensesContribution;
+      const available = Number(dailyBudget.budgetAmount) - Number(dailyBudget.spent) - plannedExpensesAmount;
 
       res.json({
         transactions: recentTransactions.map(t => ({
@@ -179,7 +178,7 @@ export function registerRoutes(app: Express): Server {
           available,
           spent: Number(dailyBudget.spent),
           saved: Number(dailyBudget.saved),
-          plannedExpensesContribution
+          plannedExpensesContribution: plannedExpensesAmount
         }
       });
     } catch (error) {
@@ -198,14 +197,14 @@ export function registerRoutes(app: Express): Server {
 
       const transaction = await transactionRepo.create({
         userId: req.user!.id,
-        amount: amount.toFixed(2),
+        amount,
         description,
         categoryId
       });
 
       // Update daily budget spent amount
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
-      const newSpentAmount = (Number(dailyBudget.spent) + amount).toFixed(2);
+      const newSpentAmount = Number(dailyBudget.spent) + amount;
 
       await dailyBudgetRepo.update(dailyBudget.id, {
         spent: newSpentAmount
