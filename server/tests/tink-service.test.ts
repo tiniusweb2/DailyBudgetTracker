@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { tinkService } from '../services/TinkService';
 
 describe('Tink Service', () => {
@@ -26,6 +26,9 @@ describe('Tink Service', () => {
       const result = await tinkService.createAuthorizationLink(userId);
       expect(result).toBeDefined();
       // Add more specific assertions based on the actual response structure
+      expect(result.id).toBeDefined();
+      // The response should contain a code that we can exchange for an access token
+      expect(result.code).toBeDefined();
     });
   });
 });

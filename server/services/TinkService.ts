@@ -6,11 +6,13 @@ class TinkService {
   private CLIENT_SECRET: string;
   private accessToken: string | null = null;
   private tokenExpiration: Date | null = null;
+  private ACTOR_CLIENT_ID: string;
 
   constructor() {
     // Initialize with verified credentials
     this.CLIENT_ID = 'f14b63cedeeb4828aebe67decc474eb7';
     this.CLIENT_SECRET = 'bb8b8c6a740248d2b53ea3c8a2d4af90';
+    this.ACTOR_CLIENT_ID = this.CLIENT_ID; // Use same client ID as actor client ID for testing
   }
 
   private async getAccessToken(): Promise<string> {
@@ -61,7 +63,7 @@ class TinkService {
           'Authorization': `Bearer ${accessToken}`
         },
         body: JSON.stringify({
-          actor_client_id: process.env.TINK_ACTOR_CLIENT_ID,
+          actor_client_id: this.ACTOR_CLIENT_ID,
           market: 'NO',
           locale: 'no_NO',
           scope: [
@@ -70,21 +72,19 @@ class TinkService {
             'investments:read',
             'user:read'
           ].join(' '),
-          redirect_uri: process.env.TINK_REDIRECT_URI
+          redirect_uri: `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co/api/tink/callback`
         })
       });
 
       if (!response.ok) {
         const error = await response.text();
+        console.error('Tink authorization link error:', error);
         throw new Error(`Failed to create authorization link: ${error}`);
       }
 
       return response.json();
     } catch (error: any) {
       console.error('Error creating Tink authorization link:', error);
-      if (error.response?.data?.error_message) {
-        throw AppError.internal(`Failed to create bank link: ${error.response.data.error_message}`);
-      }
       throw AppError.internal('Failed to create bank link');
     }
   }
