@@ -68,6 +68,12 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
+// Separate component for icon display
+const IconDisplay = ({ iconName }: { iconName: string }) => {
+  const Icon = LucideIcons[iconName as keyof typeof LucideIcons] as React.ComponentType<{ className?: string }> || Activity;
+  return <Icon className="h-4 w-4" />;
+};
+
 export default function CategoryCustomization() {
   const queryClient = useQueryClient();
 
@@ -116,18 +122,6 @@ export default function CategoryCustomization() {
     createCategory.mutate(data);
   };
 
-  // Helper function to render icon component
-  const renderIcon = (iconName: string) => {
-    const Icon = LucideIcons[iconName as keyof typeof LucideIcons] as React.ComponentType<{ className?: string }>;
-    if (!Icon) return <Activity className="h-4 w-4" />;
-    try {
-      return <Icon className="h-4 w-4" />;
-    } catch (error) {
-      console.error(`Error rendering icon ${iconName}:`, error);
-      return <Activity className="h-4 w-4" />;
-    }
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -153,9 +147,9 @@ export default function CategoryCustomization() {
                     className="flex items-center gap-2 p-2 rounded-lg border"
                   >
                     <div className={`p-2 rounded-md ${category.color}`}>
-                      {renderIcon(category.icon)}
+                      <IconDisplay iconName={category.icon} />
                     </div>
-                    <span>{category.name}</span>
+                    {category.name}
                   </div>
                 ))
               ) : (
@@ -196,7 +190,7 @@ export default function CategoryCustomization() {
                           <SelectTrigger>
                             <SelectValue>
                               <div className="flex items-center gap-2">
-                                {renderIcon(field.value)}
+                                <IconDisplay iconName={field.value} />
                                 {field.value}
                               </div>
                             </SelectValue>
@@ -206,7 +200,7 @@ export default function CategoryCustomization() {
                           {availableIcons.map((icon) => (
                             <SelectItem key={icon} value={icon}>
                               <div className="flex items-center gap-2">
-                                {renderIcon(icon)}
+                                <IconDisplay iconName={icon} />
                                 {icon}
                               </div>
                             </SelectItem>
