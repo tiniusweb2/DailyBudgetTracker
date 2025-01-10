@@ -6,7 +6,7 @@ import cookieParser from "cookie-parser";
 import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { users, type InsertUser } from "@db/schema";
+import { users, type User } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 import { AppError } from "./domain/errors/AppError";
@@ -14,6 +14,7 @@ import { TokenService } from "./services/TokenService";
 
 const scryptAsync = promisify(scrypt);
 
+// Define Express.User type to match safe user data
 declare global {
   namespace Express {
     interface User {
@@ -56,7 +57,7 @@ export function setupAuth(app: Express) {
 
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.REPL_ID || "secure-session-secret",
+    secret: process.env.REPL_ID || "finance-app-secret",
     resave: false,
     saveUninitialized: false,
     store: new MemoryStore({
@@ -93,10 +94,16 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "Incorrect password." });
         }
 
-        // Don't send password to client
-        const { password: _, ...safeUser } = user;
+        // Construct the safe user object without password
+        const safeUser = {
+          id: user.id,
+          username: user.username,
+          dailyBudgetAmount: user.dailyBudgetAmount,
+          createdAt: user.createdAt
+        };
         return done(null, safeUser);
       } catch (err) {
+        console.error('Authentication error:', err);
         return done(err);
       }
     })
@@ -118,10 +125,16 @@ export function setupAuth(app: Express) {
         return done(null, false);
       }
 
-      // Don't send password to client
-      const { password: _, ...safeUser } = user;
+      // Construct safe user object without password
+      const safeUser = {
+        id: user.id,
+        username: user.username,
+        dailyBudgetAmount: user.dailyBudgetAmount,
+        createdAt: user.createdAt
+      };
       done(null, safeUser);
     } catch (err) {
+      console.error('Deserialization error:', err);
       done(err);
     }
   });
@@ -134,7 +147,6 @@ export function setupAuth(app: Express) {
         throw AppError.badRequest("Username and password are required");
       }
 
-      // Check if user already exists
       const [existingUser] = await db
         .select()
         .from(users)
@@ -147,7 +159,7 @@ export function setupAuth(app: Express) {
 
       const hashedPassword = await hashPassword(password);
 
-      // Create the new user
+      // Create new user
       const [user] = await db
         .insert(users)
         .values({
@@ -157,8 +169,21 @@ export function setupAuth(app: Express) {
         })
         .returning();
 
-      // Don't send password to client
-      const { password: _, ...safeUser } = user;
+      // Construct safe user object
+      const safeUser = {
+        id: user.id,
+        username: user.username,
+        dailyBudgetAmount: user.dailyBudgetAmount,
+        createdAt: user.createdAt
+      };
+
+      // Log in the user
+      await new Promise<void>((resolve, reject) => {
+        req.logIn(safeUser, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
 
       // Create refresh token
       const refreshToken = await TokenService.createRefreshToken(user.id);
@@ -171,15 +196,10 @@ export function setupAuth(app: Express) {
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
 
-      // Log the user in
-      req.login(safeUser, (err) => {
-        if (err) {
-          return next(err);
-        }
-        return res.json({
-          message: "Registration successful",
-          user: safeUser
-        });
+      // Send response
+      res.json({
+        message: "Registration successful",
+        user: safeUser
       });
     } catch (error) {
       if (error instanceof AppError) {
@@ -192,6 +212,7 @@ export function setupAuth(app: Express) {
   app.post("/api/login", (req, res, next) => {
     passport.authenticate("local", async (err: any, user: Express.User | false, info: IVerifyOptions) => {
       if (err) {
+        console.error('Login error:', err);
         return next(err);
       }
 
@@ -199,8 +220,16 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: info.message || "Login failed" });
       }
 
-      // Create refresh token before logging in
       try {
+        // Log in the user
+        await new Promise<void>((resolve, reject) => {
+          req.logIn(user, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
+
+        // Create refresh token
         const refreshToken = await TokenService.createRefreshToken(user.id);
 
         // Set refresh token cookie
@@ -211,17 +240,16 @@ export function setupAuth(app: Express) {
           maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
         });
 
-        // Log the user in after setting cookie
-        req.login(user, (err) => {
-          if (err) {
-            return next(err);
-          }
-          return res.json({
-            message: "Login successful",
-            user
-          });
+        // Send success response
+        return res.json({
+          message: "Login successful",
+          user
         });
       } catch (error) {
+        console.error('Login process error:', error);
+        if (error instanceof AppError) {
+          return res.status(error.statusCode).json({ message: error.message });
+        }
         return next(error);
       }
     })(req, res, next);
@@ -235,48 +263,46 @@ export function setupAuth(app: Express) {
         throw AppError.unauthorized("No refresh token provided");
       }
 
-      let refreshToken;
-      try {
-        refreshToken = await TokenService.replaceRefreshToken(oldToken);
-      } catch (error) {
-        if (error instanceof AppError) {
-          throw error;
-        }
-        throw AppError.unauthorized("Invalid refresh token");
-      }
+      const newRefreshToken = await TokenService.replaceRefreshToken(oldToken);
 
       // Get user data
       const [user] = await db
         .select()
         .from(users)
-        .where(eq(users.id, refreshToken.userId))
+        .where(eq(users.id, newRefreshToken.userId))
         .limit(1);
 
       if (!user) {
         throw AppError.unauthorized("User not found");
       }
 
-      // Remove password from user object
-      const { password: _, ...safeUser } = user;
+      // Construct safe user object
+      const safeUser = {
+        id: user.id,
+        username: user.username,
+        dailyBudgetAmount: user.dailyBudgetAmount,
+        createdAt: user.createdAt
+      };
 
-      // Set refresh token cookie
-      res.cookie('refreshToken', refreshToken.token, {
+      // Set new refresh token cookie
+      res.cookie('refreshToken', newRefreshToken.token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
 
-      // Log the user in
-      req.login(safeUser, (err) => {
-        if (err) {
-          return next(err);
-        }
-
-        res.json({
-          message: "Token refreshed successfully",
-          user: safeUser
+      // Log in the user
+      await new Promise<void>((resolve, reject) => {
+        req.logIn(safeUser, (err) => {
+          if (err) reject(err);
+          else resolve();
         });
+      });
+
+      res.json({
+        message: "Token refreshed successfully",
+        user: safeUser
       });
     } catch (error) {
       if (error instanceof AppError) {
@@ -286,7 +312,7 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/logout", (req, res, next) => {
+  app.post("/api/logout", async (req, res, next) => {
     try {
       const refreshToken = req.cookies.refreshToken;
 
@@ -297,11 +323,23 @@ export function setupAuth(app: Express) {
         sameSite: 'lax'
       });
 
-      const promises = [];
+      // Create an array of cleanup tasks
+      const tasks: Promise<void>[] = [];
+
+      // Add token revocation if a token exists
+      if (refreshToken) {
+        tasks.push(
+          TokenService.revokeRefreshToken(refreshToken)
+            .catch(err => {
+              console.error('Error revoking token:', err);
+              // Don't fail the logout if token revocation fails
+            })
+        );
+      }
 
       // Add session destruction if it exists
       if (req.session) {
-        promises.push(
+        tasks.push(
           new Promise<void>((resolve, reject) => {
             req.session.destroy((err) => {
               if (err) reject(err);
@@ -311,25 +349,13 @@ export function setupAuth(app: Express) {
         );
       }
 
-      // Add token revocation if it exists
-      if (refreshToken) {
-        promises.push(
-          TokenService.revokeRefreshToken(refreshToken)
-            .catch(err => {
-              console.error('Error revoking token:', err);
-              // Don't fail the logout if token revocation fails
-            })
-        );
-      }
+      // Wait for all cleanup tasks
+      await Promise.all(tasks);
 
-      // Handle all cleanup operations
-      Promise.all(promises)
-        .then(() => {
-          req.logout(() => {
-            res.json({ message: "Logged out successfully" });
-          });
-        })
-        .catch(next);
+      // Finally logout from passport
+      req.logout(() => {
+        res.json({ message: "Logged out successfully" });
+      });
     } catch (error) {
       if (error instanceof AppError) {
         return res.status(error.statusCode).json({ message: error.message });
