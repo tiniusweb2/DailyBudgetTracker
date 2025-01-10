@@ -9,6 +9,7 @@ import { users } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 import { AppError } from "./domain/errors/AppError";
+import { TokenService } from "./services/TokenService";
 
 const scryptAsync = promisify(scrypt);
 
@@ -173,32 +174,109 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: Express.User | false, info: IVerifyOptions) => {
+    passport.authenticate("local", async (err: any, user: Express.User | false, info: IVerifyOptions) => {
       if (err) {
         return next(err);
       }
       if (!user) {
         return res.status(400).json({ message: info.message || "Login failed" });
       }
-      req.logIn(user, (err) => {
-        if (err) {
-          return next(err);
-        }
-        return res.json({
-          message: "Login successful",
-          user
+
+      try {
+        // Create refresh token
+        const refreshToken = await TokenService.createRefreshToken(user.id);
+
+        req.logIn(user, (err) => {
+          if (err) {
+            return next(err);
+          }
+
+          // Set refresh token in HTTP-only cookie
+          res.cookie('refreshToken', refreshToken.token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+          });
+
+          return res.json({
+            message: "Login successful",
+            user
+          });
         });
-      });
+      } catch (error) {
+        next(error);
+      }
     })(req, res, next);
   });
 
-  app.post("/api/logout", (req, res) => {
-    req.logout((err) => {
-      if (err) {
-        return res.status(500).json({ message: "Logout failed" });
+  app.post("/api/refresh-token", async (req, res, next) => {
+    try {
+      const oldToken = req.cookies.refreshToken;
+
+      if (!oldToken) {
+        throw AppError.unauthorized("No refresh token provided");
       }
-      res.json({ message: "Logged out successfully" });
-    });
+
+      const newRefreshToken = await TokenService.replaceRefreshToken(oldToken);
+
+      // Set new refresh token in cookie
+      res.cookie('refreshToken', newRefreshToken.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+
+      // Get user data
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, newRefreshToken.userId))
+        .limit(1);
+
+      if (!user) {
+        throw AppError.unauthorized("User not found");
+      }
+
+      const { password: _, ...safeUser } = user;
+
+      // Log the user in
+      req.logIn(safeUser, (err) => {
+        if (err) {
+          return next(err);
+        }
+
+        res.json({
+          message: "Token refreshed successfully",
+          user: safeUser
+        });
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/logout", async (req, res) => {
+    try {
+      const refreshToken = req.cookies.refreshToken;
+
+      if (refreshToken) {
+        await TokenService.revokeRefreshToken(refreshToken);
+      }
+
+      // Clear refresh token cookie
+      res.clearCookie('refreshToken');
+
+      req.logout((err) => {
+        if (err) {
+          return res.status(500).json({ message: "Logout failed" });
+        }
+        res.json({ message: "Logged out successfully" });
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Logout failed" });
+    }
   });
 
   app.get("/api/user", (req, res) => {

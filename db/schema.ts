@@ -78,39 +78,31 @@ export const bankAccounts = pgTable("bank_accounts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Define relationships
+// Refresh Token table for secure session management
+export const refreshTokens = pgTable("refresh_tokens", {
+  id: serial("id").primaryKey(),
+  userId: serial("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  token: text("token").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  revokedAt: timestamp("revoked_at"),
+  replacedByToken: text("replaced_by_token"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Update userRelations to include refresh tokens
 export const userRelations = relations(users, ({ many }) => ({
   transactions: many(transactions),
   dailyBudgets: many(dailyBudgets),
   plannedExpenses: many(plannedExpenses),
   incomeSources: many(incomeSources),
   bankAccounts: many(bankAccounts),
+  refreshTokens: many(refreshTokens),
 }));
 
-export const transactionRelations = relations(transactions, ({ one }) => ({
+export const refreshTokenRelations = relations(refreshTokens, ({ one }) => ({
   user: one(users, {
-    fields: [transactions.userId],
+    fields: [refreshTokens.userId],
     references: [users.id],
-  }),
-  category: one(categories, {
-    fields: [transactions.categoryId],
-    references: [categories.id],
-  }),
-}));
-
-export const categoryRelations = relations(categories, ({ many }) => ({
-  transactions: many(transactions),
-  plannedExpenses: many(plannedExpenses),
-}));
-
-export const plannedExpenseRelations = relations(plannedExpenses, ({ one }) => ({
-  user: one(users, {
-    fields: [plannedExpenses.userId],
-    references: [users.id],
-  }),
-  category: one(categories, {
-    fields: [plannedExpenses.categoryId],
-    references: [categories.id],
   }),
 }));
 
@@ -142,6 +134,8 @@ export type IncomeSource = typeof incomeSources.$inferSelect;
 export type InsertIncomeSource = typeof incomeSources.$inferInsert;
 export type BankAccount = typeof bankAccounts.$inferSelect;
 export type InsertBankAccount = typeof bankAccounts.$inferInsert;
+export type RefreshToken = typeof refreshTokens.$inferSelect;
+export type InsertRefreshToken = typeof refreshTokens.$inferInsert;
 
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
@@ -157,3 +151,5 @@ export const insertIncomeSourceSchema = createInsertSchema(incomeSources);
 export const selectIncomeSourceSchema = createSelectSchema(incomeSources);
 export const insertBankAccountSchema = createInsertSchema(bankAccounts);
 export const selectBankAccountSchema = createSelectSchema(bankAccounts);
+export const insertRefreshTokenSchema = createInsertSchema(refreshTokens);
+export const selectRefreshTokenSchema = createSelectSchema(refreshTokens);
