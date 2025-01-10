@@ -2,7 +2,7 @@ import { Switch, Route } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { AlertCircle, Loader2 } from "lucide-react";
 import AuthPage from "./pages/auth-page";
-import DashboardPage from "./pages/DashboardPage";
+import BudgetDashboard from "./pages/budget-dashboard";
 import { useUser } from "./hooks/use-user";
 
 function App() {
@@ -23,7 +23,7 @@ function App() {
 
   return (
     <Switch>
-      <Route path="/" component={DashboardPage} />
+      <Route path="/" component={BudgetDashboard} />
       <Route component={NotFound} />
     </Switch>
   );
