@@ -10,12 +10,22 @@ import createMemoryStore from "memorystore";
 
 // Helper functions for password hashing
 export async function hashPassword(password: string): Promise<string> {
-  const salt = await bcrypt.genSalt(10);
-  return bcrypt.hash(password, salt);
+  try {
+    const salt = await bcrypt.genSalt(10);
+    return bcrypt.hash(password, salt);
+  } catch (error) {
+    console.error('Error hashing password:', error);
+    throw new Error('Failed to hash password');
+  }
 }
 
 export async function comparePasswords(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash);
+  try {
+    return bcrypt.compare(password, hash);
+  } catch (error) {
+    console.error('Error comparing passwords:', error);
+    throw new Error('Failed to compare passwords');
+  }
 }
 
 // Authentication middleware
@@ -72,6 +82,7 @@ export function setupAuth(app: Express) {
 
       return done(null, user);
     } catch (err) {
+      console.error('Passport strategy error:', err);
       return done(err);
     }
   }));
@@ -96,6 +107,7 @@ export function setupAuth(app: Express) {
       const { password: _, ...userWithoutPassword } = user;
       done(null, userWithoutPassword);
     } catch (err) {
+      console.error('Deserialize user error:', err);
       done(err);
     }
   });
@@ -134,6 +146,7 @@ export function setupAuth(app: Express) {
       // Log the user in after registration
       req.login(user, (err) => {
         if (err) {
+          console.error('Login after registration error:', err);
           return res.status(500).json({ message: "Registration failed" });
         }
         const { password: _, ...userWithoutPassword } = user;
@@ -151,6 +164,7 @@ export function setupAuth(app: Express) {
   app.post("/api/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: Express.User | false, info: { message: string } | undefined) => {
       if (err) {
+        console.error('Login error:', err);
         return next(err);
       }
       if (!user) {
@@ -172,6 +186,7 @@ export function setupAuth(app: Express) {
   app.post("/api/logout", (req, res) => {
     req.logout((err) => {
       if (err) {
+        console.error('Logout error:', err);
         return res.status(500).json({ message: "Logout failed" });
       }
       res.json({ message: "Logged out successfully" });

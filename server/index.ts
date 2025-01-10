@@ -54,13 +54,16 @@ const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunct
 (async () => {
   try {
     // Verify database connection before proceeding
+    console.log("Verifying database connection...");
     await db.execute(sql`SELECT 1`);
     console.log("Database connection verified");
 
     // Setup authentication routes first
+    console.log("Setting up authentication...");
     setupAuth(app);
 
     // Register application routes
+    console.log("Registering routes...");
     const server = registerRoutes(app);
 
     // Add error handling middleware after all routes
@@ -68,8 +71,10 @@ const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunct
 
     // Setup Vite in development, static serving in production
     if (app.get("env") === "development") {
+      console.log("Setting up Vite development server...");
       await setupVite(app, server);
     } else {
+      console.log("Setting up static file serving...");
       serveStatic(app);
     }
 
