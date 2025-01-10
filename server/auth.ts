@@ -1,148 +1,59 @@
-import passport from "passport";
-import { Strategy as LocalStrategy } from "passport-local";
-import { type Express } from "express";
-import session from "express-session";
-import cookieParser from "cookie-parser";
-import createMemoryStore from "memorystore";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
-import { users } from "@db/schema";
+import { type Express, Request, Response, NextFunction } from "express";
 import { db } from "@db";
+import { users } from "@db/schema";
 import { eq } from "drizzle-orm";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
-const scryptAsync = promisify(scrypt);
+const JWT_SECRET = process.env.REPL_ID || "finance-app-secret";
 
-// Define a safe user type without password
-type SafeUser = {
-  id: number;
-  username: string;
-  dailyBudgetAmount: string;
-  createdAt: Date;
-};
-
+// Extend Express Request type to include user
 declare global {
   namespace Express {
-    interface User extends SafeUser {}
-  }
-}
-
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
-}
-
-export async function comparePasswords(
-  suppliedPassword: string,
-  storedPassword: string
-): Promise<boolean> {
-  try {
-    const [hashedPassword, salt] = storedPassword.split(".");
-    const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
-    const suppliedPasswordBuf = (await scryptAsync(
-      suppliedPassword,
-      salt,
-      64
-    )) as Buffer;
-    return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
-  } catch (error) {
-    console.error('Error comparing passwords:', error);
-    return false;
-  }
-}
-
-export function setupAuth(app: Express) {
-  // Setup cookie parser
-  app.use(cookieParser());
-
-  // Setup session store
-  const MemoryStore = createMemoryStore(session);
-  const sessionSettings: session.SessionOptions = {
-    secret: process.env.REPL_ID || "finance-app-secret",
-    resave: false,
-    saveUninitialized: false,
-    store: new MemoryStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
-    }),
-    name: 'financeapp.sid',
-    cookie: {
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax'
-    }
-  };
-
-  app.use(session(sessionSettings));
-  app.use(passport.initialize());
-  app.use(passport.session());
-
-  // Configure passport local strategy
-  passport.use(
-    new LocalStrategy(async (username, password, done) => {
-      try {
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(eq(users.username, username))
-          .limit(1);
-
-        if (!user) {
-          return done(null, false, { message: "Incorrect username." });
-        }
-
-        const isValid = await comparePasswords(password, user.password);
-        if (!isValid) {
-          return done(null, false, { message: "Incorrect password." });
-        }
-
-        // Return safe user object without password
-        const safeUser: SafeUser = {
-          id: user.id,
-          username: user.username,
-          dailyBudgetAmount: user.dailyBudgetAmount,
-          createdAt: user.createdAt
-        };
-        return done(null, safeUser);
-      } catch (err) {
-        console.error('Authentication error:', err);
-        return done(err);
-      }
-    })
-  );
-
-  passport.serializeUser((user, done) => {
-    done(null, user.id);
-  });
-
-  passport.deserializeUser(async (id: number, done) => {
-    try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, id))
-        .limit(1);
-
-      if (!user) {
-        return done(null, false);
-      }
-
-      // Return safe user object without password
-      const safeUser: SafeUser = {
-        id: user.id,
-        username: user.username,
-        dailyBudgetAmount: user.dailyBudgetAmount,
-        createdAt: user.createdAt
+    interface Request {
+      user?: {
+        id: number;
       };
-      done(null, safeUser);
-    } catch (err) {
-      console.error('Deserialization error:', err);
-      done(err);
     }
-  });
+  }
+}
 
+// Helper functions for password hashing
+async function hashPassword(password: string): Promise<string> {
+  const salt = await bcrypt.genSalt(10);
+  return bcrypt.hash(password, salt);
+}
+
+async function comparePasswords(password: string, hash: string): Promise<boolean> {
+  return bcrypt.compare(password, hash);
+}
+
+// JWT token generation
+function generateToken(userId: number): string {
+  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '24h' });
+}
+
+// Authentication middleware
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ message: "No token provided" });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
+    req.user = { id: decoded.userId };
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: "Invalid token" });
+  }
+}
+
+// Setup authentication routes
+export function setupAuth(app: Express) {
   // Registration endpoint
-  app.post("/api/register", async (req, res, next) => {
+  app.post("/api/register", async (req, res) => {
     try {
       const { username, password } = req.body;
 
@@ -150,6 +61,7 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: "Username and password are required" });
       }
 
+      // Check if user exists
       const [existingUser] = await db
         .select()
         .from(users)
@@ -160,9 +72,8 @@ export function setupAuth(app: Express) {
         return res.status(400).json({ message: "Username already exists" });
       }
 
-      const hashedPassword = await hashPassword(password);
-
       // Create new user
+      const hashedPassword = await hashPassword(password);
       const [user] = await db
         .insert(users)
         .values({
@@ -172,65 +83,90 @@ export function setupAuth(app: Express) {
         })
         .returning();
 
-      // Create safe user object without password
-      const safeUser: SafeUser = {
-        id: user.id,
-        username: user.username,
-        dailyBudgetAmount: user.dailyBudgetAmount,
-        createdAt: user.createdAt
-      };
+      // Generate token
+      const token = generateToken(user.id);
 
-      // Log in the user
-      req.login(safeUser, (err) => {
-        if (err) {
-          return next(err);
-        }
-        return res.json({
-          message: "Registration successful",
-          user: safeUser
-        });
+      res.json({
+        message: "Registration successful",
+        user: {
+          id: user.id,
+          username: user.username,
+          dailyBudgetAmount: user.dailyBudgetAmount,
+        },
+        token
       });
     } catch (error) {
-      next(error);
+      console.error('Registration error:', error);
+      res.status(500).json({ message: "Registration failed" });
     }
   });
 
   // Login endpoint
-  app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
-      if (err) {
-        console.error('Login error:', err);
-        return next(err);
+  app.post("/api/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password are required" });
       }
+
+      // Find user
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
 
       if (!user) {
-        return res.status(400).json({ message: info.message || "Login failed" });
+        return res.status(400).json({ message: "Invalid credentials" });
       }
 
-      req.login(user, (err) => {
-        if (err) {
-          return next(err);
-        }
-        return res.json({
-          message: "Login successful",
-          user
-        });
-      });
-    })(req, res, next);
-  });
+      // Verify password
+      const isValid = await comparePasswords(password, user.password);
+      if (!isValid) {
+        return res.status(400).json({ message: "Invalid credentials" });
+      }
 
-  // Logout endpoint
-  app.post("/api/logout", (req, res) => {
-    req.logout(() => {
-      res.json({ message: "Logged out successfully" });
-    });
+      // Generate token
+      const token = generateToken(user.id);
+
+      res.json({
+        message: "Login successful",
+        user: {
+          id: user.id,
+          username: user.username,
+          dailyBudgetAmount: user.dailyBudgetAmount,
+        },
+        token
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(500).json({ message: "Login failed" });
+    }
   });
 
   // Get current user endpoint
-  app.get("/api/user", (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
+  app.get("/api/user", requireAuth, async (req, res) => {
+    try {
+      // We can safely assert req.user exists because of requireAuth middleware
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, req.user!.id))
+        .limit(1);
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      res.json({
+        id: user.id,
+        username: user.username,
+        dailyBudgetAmount: user.dailyBudgetAmount,
+      });
+    } catch (error) {
+      console.error('Get user error:', error);
+      res.status(500).json({ message: "Failed to get user data" });
     }
-    res.json(req.user);
   });
 }

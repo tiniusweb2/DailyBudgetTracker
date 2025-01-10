@@ -4,7 +4,23 @@ import { useToast } from "@/hooks/use-toast";
 
 interface AuthResponse {
   user: SelectUser;
+  token: string;
   message: string;
+}
+
+// Store token in localStorage
+const TOKEN_KEY = 'auth_token';
+
+function setToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+function removeToken() {
+  localStorage.removeItem(TOKEN_KEY);
 }
 
 async function handleRequest(
@@ -13,14 +29,20 @@ async function handleRequest(
   body?: Omit<InsertUser, "id" | "createdAt" | "dailyBudgetAmount">
 ): Promise<AuthResponse> {
   try {
+    const token = getToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
     const response = await fetch(url, {
       method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
+      headers,
       body: body ? JSON.stringify(body) : undefined,
-      credentials: "include",
     });
 
     if (!response.ok) {
@@ -36,14 +58,20 @@ async function handleRequest(
 
 async function fetchUser(): Promise<SelectUser | null> {
   try {
+    const token = getToken();
+    if (!token) {
+      return null;
+    }
+
     const response = await fetch('/api/user', {
-      credentials: 'include',
       headers: {
         'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
       }
     });
 
     if (response.status === 401) {
+      removeToken();
       return null;
     }
 
@@ -73,6 +101,7 @@ export function useUser() {
     mutationFn: (userData: Omit<InsertUser, "id" | "createdAt" | "dailyBudgetAmount">) => 
       handleRequest('/api/login', 'POST', userData),
     onSuccess: (data) => {
+      setToken(data.token);
       queryClient.setQueryData(['user'], data.user);
       toast({
         title: "Success",
@@ -89,7 +118,10 @@ export function useUser() {
   });
 
   const logoutMutation = useMutation({
-    mutationFn: () => handleRequest('/api/logout', 'POST'),
+    mutationFn: () => {
+      removeToken();
+      return Promise.resolve({ message: "Logged out successfully" });
+    },
     onSuccess: (data) => {
       queryClient.setQueryData(['user'], null);
       toast({
@@ -97,19 +129,13 @@ export function useUser() {
         description: data.message,
       });
     },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    }
   });
 
   const registerMutation = useMutation({
     mutationFn: (userData: Omit<InsertUser, "id" | "createdAt" | "dailyBudgetAmount">) => 
       handleRequest('/api/register', 'POST', userData),
     onSuccess: (data) => {
+      setToken(data.token);
       queryClient.setQueryData(['user'], data.user);
       toast({
         title: "Success",

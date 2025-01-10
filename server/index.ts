@@ -1,5 +1,4 @@
 import express, { type Request, Response, NextFunction } from "express";
-import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { setupVite, serveStatic, log } from "./vite";
@@ -11,7 +10,6 @@ const app = express();
 // Basic middleware setup
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -48,7 +46,7 @@ app.use((req, res, next) => {
 (async () => {
   try {
     // Verify database connection
-    await db.execute(sql.raw('SELECT 1'));
+    await db.execute(sql`SELECT 1`);
     console.log("Database connection verified");
 
     // Setup authentication

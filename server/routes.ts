@@ -1,4 +1,4 @@
-import type { Express, Request, Response, NextFunction } from "express";
+import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { DrizzleTransactionRepository } from "./data/repositories/TransactionRepository";
 import { DrizzleUserRepository } from "./data/repositories/UserRepository";
@@ -11,6 +11,7 @@ import { plaidService } from "./services/PlaidService";
 import { bankAccounts, incomeSources } from "@db/schema";
 import { db } from "@db";
 import { convertDecimalToNumber } from "@db/schema";
+import { requireAuth } from "./auth";
 
 export function registerRoutes(app: Express): Server {
   // Initialize repositories
@@ -18,14 +19,6 @@ export function registerRoutes(app: Express): Server {
   const userRepo = new DrizzleUserRepository();
   const dailyBudgetRepo = new DrizzleDailyBudgetRepository();
   const plannedExpenseRepo = new DrizzlePlannedExpenseRepository();
-
-  // Middleware to ensure user is authenticated
-  const requireAuth = (req: Request, res: Response, next: NextFunction) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    next();
-  };
 
   // Basic health check endpoint
   app.get("/api/health", (_req, res) => {
@@ -39,7 +32,7 @@ export function registerRoutes(app: Express): Server {
   app.use("/api/plaid", requireAuth);
 
   // Get user's transactions and budget data
-  app.get("/api/transactions", async (req: Request, res: Response, next: NextFunction) => {
+  app.get("/api/transactions", async (req, res, next) => {
     try {
       const today = new Date();
       const sevenDaysAgo = subDays(today, 7);
@@ -72,7 +65,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get all planned expenses
-  app.get("/api/planned-expenses", async (req: Request, res: Response, next: NextFunction) => {
+  app.get("/api/planned-expenses", async (req, res, next) => {
     try {
       const expenses = await plannedExpenseRepo.findByUserId(req.user!.id);
       res.json(expenses.map(convertDecimalToNumber));
@@ -82,7 +75,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Add new planned expense
-  app.post("/api/planned-expenses", async (req: Request, res: Response, next: NextFunction) => {
+  app.post("/api/planned-expenses", async (req, res, next) => {
     try {
       const { name, amount, targetDate, categoryId } = req.body;
 
@@ -97,10 +90,10 @@ export function registerRoutes(app: Express): Server {
       const expense = await plannedExpenseRepo.create({
         userId: req.user!.id,
         name,
-        amount: amount.toFixed(2),
+        amount: String(amount.toFixed(2)),
         targetDate: target,
         categoryId,
-        dailyContribution: dailyContribution.toFixed(2),
+        dailyContribution: String(dailyContribution.toFixed(2)),
         isCompleted: false
       });
 
@@ -111,18 +104,18 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Update planned expense
-  app.patch("/api/planned-expenses/:id", async (req: Request, res: Response, next: NextFunction) => {
+  app.patch("/api/planned-expenses/:id", async (req, res, next) => {
     try {
       const { name, amount, targetDate, isCompleted } = req.body;
       const updates: any = {};
 
       if (name !== undefined) updates.name = name;
       if (amount !== undefined) {
-        updates.amount = amount.toFixed(2);
+        updates.amount = String(amount.toFixed(2));
         if (targetDate !== undefined) {
           updates.targetDate = new Date(targetDate);
           const daysUntilTarget = Math.max(1, differenceInDays(updates.targetDate, new Date()));
-          updates.dailyContribution = (amount / daysUntilTarget).toFixed(2);
+          updates.dailyContribution = String((amount / daysUntilTarget).toFixed(2));
         }
       }
       if (isCompleted !== undefined) updates.isCompleted = isCompleted;
@@ -134,8 +127,46 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Update daily budget amount
+  app.patch("/api/budget", async (req, res, next) => {
+    try {
+      const { amount } = req.body;
+
+      if (typeof amount !== 'number' || amount <= 0) {
+        throw AppError.badRequest("Invalid budget amount");
+      }
+
+      await userRepo.update(req.user!.id, {
+        dailyBudgetAmount: String(amount.toFixed(2))
+      });
+
+      // Update current day's budget amount
+      const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
+      await dailyBudgetRepo.update(dailyBudget.id, {
+        budgetAmount: String(amount.toFixed(2))
+      });
+
+      res.json({
+        message: "Budget updated successfully",
+        dailyBudgetAmount: amount
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Get Plaid link token
+  app.post("/api/plaid/link/token", async (req, res, next) => {
+    try {
+      const linkTokenData = await plaidService.createLinkToken(req.user!.id);
+      res.json(linkTokenData);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Add new transaction with automatic categorization
-  app.post("/api/transactions", async (req: Request, res: Response, next: NextFunction) => {
+  app.post("/api/transactions", async (req, res, next) => {
     try {
       const { amount, description } = req.body;
 
@@ -149,7 +180,7 @@ export function registerRoutes(app: Express): Server {
       // Create the transaction with predicted category
       const transaction = await transactionRepo.create({
         userId: req.user!.id,
-        amount: amount.toFixed(2),
+        amount: String(amount.toFixed(2)),
         description,
         categoryId
       });
@@ -157,7 +188,7 @@ export function registerRoutes(app: Express): Server {
       // Update daily budget spent amount
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
       await dailyBudgetRepo.update(dailyBudget.id, {
-        spent: (Number(dailyBudget.spent) + amount).toFixed(2)
+        spent: String(Number(dailyBudget.spent) + amount).toFixed(2)
       });
 
       res.json({
@@ -168,100 +199,6 @@ export function registerRoutes(app: Express): Server {
       next(error);
     }
   });
-
-  // Update daily budget amount
-  app.patch("/api/budget", async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { amount } = req.body;
-
-      if (typeof amount !== 'number' || amount <= 0) {
-        throw AppError.badRequest("Invalid budget amount");
-      }
-
-      await userRepo.update(req.user!.id, {
-        dailyBudgetAmount: amount.toFixed(2)
-      });
-
-      // Update current day's budget amount
-      const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
-      await dailyBudgetRepo.update(dailyBudget.id, {
-        budgetAmount: amount.toFixed(2)
-      });
-
-      res.json({
-        message: "Budget updated successfully",
-        dailyBudgetAmount: amount
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Get Plaid link token
-  app.post("/api/plaid/link/token", async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const linkTokenData = await plaidService.createLinkToken(req.user!.id);
-      res.json(linkTokenData);
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Exchange Plaid public token and setup income sources
-  app.post("/api/plaid/link/bank", async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { publicToken, institutionName } = req.body;
-
-      if (!publicToken || !institutionName) {
-        throw AppError.badRequest("Missing required information");
-      }
-
-      const exchangeResponse = await plaidService.exchangePublicToken(publicToken);
-
-      // Store the access token and item ID
-      const [bankAccount] = await db
-        .insert(bankAccounts)
-        .values({
-          userId: req.user!.id,
-          plaidAccessToken: exchangeResponse.access_token,
-          plaidItemId: exchangeResponse.item_id,
-          institutionName,
-          isActive: true
-        })
-        .returning();
-
-      // Fetch initial income data
-      const incomeData = await plaidService.getIncome(exchangeResponse.access_token);
-
-      // Create or update income sources based on Plaid data
-      if (incomeData.income_streams) {
-        for (const stream of incomeData.income_streams) {
-          await db
-            .insert(incomeSources)
-            .values({
-              userId: req.user!.id,
-              name: `${institutionName} - ${stream.name || 'Income'}`,
-              amount: stream.monthly_income.toFixed(2),
-              frequency: 'monthly',
-              nextPaymentDate: new Date(stream.next_payment_date || Date.now()),
-              isActive: true,
-            })
-            .onConflictDoNothing();
-        }
-      }
-
-      res.json({
-        message: "Bank account linked successfully",
-        bankAccount: {
-          id: bankAccount.id,
-          institutionName: bankAccount.institutionName,
-        },
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
   const httpServer = createServer(app);
   return httpServer;
 }
