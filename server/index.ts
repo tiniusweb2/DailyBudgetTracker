@@ -42,26 +42,29 @@ app.use((req, res, next) => {
   next();
 });
 
+// Error handling middleware
+const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('Server Error:', err);
+  const status = (err as any).status || (err as any).statusCode || 500;
+  const message = err.message || "Internal Server Error";
+  res.status(status).json({ message });
+};
+
 // Initialize server with error handling
 (async () => {
   try {
-    // Verify database connection
+    // Verify database connection before proceeding
     await db.execute(sql`SELECT 1`);
     console.log("Database connection verified");
 
-    // Setup authentication
+    // Setup authentication routes first
     setupAuth(app);
 
-    // Register routes
+    // Register application routes
     const server = registerRoutes(app);
 
-    // Error handling middleware
-    app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-      console.error('Server Error:', err);
-      const status = (err as any).status || (err as any).statusCode || 500;
-      const message = err.message || "Internal Server Error";
-      res.status(status).json({ message });
-    });
+    // Add error handling middleware after all routes
+    app.use(errorHandler);
 
     // Setup Vite in development, static serving in production
     if (app.get("env") === "development") {

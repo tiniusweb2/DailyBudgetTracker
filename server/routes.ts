@@ -90,10 +90,10 @@ export function registerRoutes(app: Express): Server {
       const expense = await plannedExpenseRepo.create({
         userId: req.user!.id,
         name,
-        amount: String(amount.toFixed(2)),
+        amount: amount.toFixed(2),
         targetDate: target,
         categoryId,
-        dailyContribution: String(dailyContribution.toFixed(2)),
+        dailyContribution: dailyContribution.toFixed(2),
         isCompleted: false
       });
 
@@ -111,11 +111,11 @@ export function registerRoutes(app: Express): Server {
 
       if (name !== undefined) updates.name = name;
       if (amount !== undefined) {
-        updates.amount = String(amount.toFixed(2));
+        updates.amount = amount.toFixed(2);
         if (targetDate !== undefined) {
           updates.targetDate = new Date(targetDate);
           const daysUntilTarget = Math.max(1, differenceInDays(updates.targetDate, new Date()));
-          updates.dailyContribution = String((amount / daysUntilTarget).toFixed(2));
+          updates.dailyContribution = (amount / daysUntilTarget).toFixed(2);
         }
       }
       if (isCompleted !== undefined) updates.isCompleted = isCompleted;
@@ -136,14 +136,16 @@ export function registerRoutes(app: Express): Server {
         throw AppError.badRequest("Invalid budget amount");
       }
 
+      const amountString = amount.toFixed(2);
+
       await userRepo.update(req.user!.id, {
-        dailyBudgetAmount: String(amount.toFixed(2))
+        dailyBudgetAmount: amountString
       });
 
       // Update current day's budget amount
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
       await dailyBudgetRepo.update(dailyBudget.id, {
-        budgetAmount: String(amount.toFixed(2))
+        budgetAmount: amountString
       });
 
       res.json({
@@ -180,15 +182,17 @@ export function registerRoutes(app: Express): Server {
       // Create the transaction with predicted category
       const transaction = await transactionRepo.create({
         userId: req.user!.id,
-        amount: String(amount.toFixed(2)),
+        amount: amount.toFixed(2),
         description,
         categoryId
       });
 
       // Update daily budget spent amount
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
+      const newSpentAmount = (Number(dailyBudget.spent) + amount).toFixed(2);
+
       await dailyBudgetRepo.update(dailyBudget.id, {
-        spent: String(Number(dailyBudget.spent) + amount).toFixed(2)
+        spent: newSpentAmount
       });
 
       res.json({
@@ -199,6 +203,7 @@ export function registerRoutes(app: Express): Server {
       next(error);
     }
   });
+
   const httpServer = createServer(app);
   return httpServer;
 }
