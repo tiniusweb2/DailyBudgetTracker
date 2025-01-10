@@ -24,4 +24,8 @@ export class AppError extends Error {
   static forbidden(message: string): AppError {
     return new AppError(message, 403, 'FORBIDDEN');
   }
+
+  static internal(message: string): AppError {
+    return new AppError(message, 500, 'INTERNAL_SERVER_ERROR');
+  }
 }

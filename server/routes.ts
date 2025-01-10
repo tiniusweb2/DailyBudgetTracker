@@ -8,6 +8,9 @@ import { DrizzlePlannedExpenseRepository } from "./data/repositories/PlannedExpe
 import { startOfDay, endOfDay, subDays, differenceInDays } from "date-fns";
 import { AppError } from "./domain/errors/AppError";
 import { categoryPredictor } from "./services/CategoryPrediction";
+import { plaidService } from "./services/PlaidService";
+import { bankAccounts, incomeSources } from "@db/schema";
+import { db } from "@db";
 
 export function registerRoutes(app: Express): Server {
   // Initialize repositories
@@ -35,8 +38,8 @@ export function registerRoutes(app: Express): Server {
 
       // Get all transactions for the user
       const transactions = await transactionRepo.findByUserId(req.user!.id);
-      const recentTransactions = transactions.filter(t => 
-        t.createdAt >= startOfDay(sevenDaysAgo) && 
+      const recentTransactions = transactions.filter(t =>
+        t.createdAt >= startOfDay(sevenDaysAgo) &&
         t.createdAt <= endOfDay(today)
       );
 
@@ -45,8 +48,8 @@ export function registerRoutes(app: Express): Server {
 
       // Get budget history for the last 7 days
       const dailyBudgets = await dailyBudgetRepo.findByUserId(req.user!.id);
-      const recentBudgets = dailyBudgets.filter(b => 
-        b.date >= startOfDay(sevenDaysAgo) && 
+      const recentBudgets = dailyBudgets.filter(b =>
+        b.date >= startOfDay(sevenDaysAgo) &&
         b.date <= endOfDay(today)
       );
 
@@ -97,10 +100,10 @@ export function registerRoutes(app: Express): Server {
       const expense = await plannedExpenseRepo.create({
         userId: req.user!.id,
         name,
-        amount,
+        amount: amount.toString(),
         targetDate: target,
         categoryId,
-        dailyContribution,
+        dailyContribution: dailyContribution.toString(),
         isCompleted: false
       });
 
@@ -117,11 +120,11 @@ export function registerRoutes(app: Express): Server {
       const updates: any = {};
 
       if (name !== undefined) updates.name = name;
-      if (amount !== undefined) updates.amount = amount;
+      if (amount !== undefined) updates.amount = amount.toString();
       if (targetDate !== undefined) {
         updates.targetDate = new Date(targetDate);
         const daysUntilTarget = Math.max(1, differenceInDays(updates.targetDate, new Date()));
-        updates.dailyContribution = amount / daysUntilTarget;
+        updates.dailyContribution = (amount / daysUntilTarget).toString();
       }
       if (isCompleted !== undefined) updates.isCompleted = isCompleted;
 
@@ -147,7 +150,7 @@ export function registerRoutes(app: Express): Server {
       // Create the transaction with predicted category
       const transaction = await transactionRepo.create({
         userId: req.user!.id,
-        amount,
+        amount: amount.toString(),
         description,
         categoryId
       });
@@ -155,7 +158,7 @@ export function registerRoutes(app: Express): Server {
       // Update daily budget spent amount
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
       await dailyBudgetRepo.update(dailyBudget.id, {
-        spent: dailyBudget.spent + amount
+        spent: (Number(dailyBudget.spent) + amount).toString()
       });
 
       res.json({
@@ -176,19 +179,83 @@ export function registerRoutes(app: Express): Server {
         throw AppError.badRequest("Invalid budget amount");
       }
 
-      const user = await userRepo.update(req.user!.id, {
-        dailyBudgetAmount: amount
+      await userRepo.update(req.user!.id, {
+        dailyBudgetAmount: amount.toString()
       });
 
       // Update current day's budget amount
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
       await dailyBudgetRepo.update(dailyBudget.id, {
-        budgetAmount: amount
+        budgetAmount: amount.toString()
       });
 
       res.json({
         message: "Budget updated successfully",
         dailyBudgetAmount: amount
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Get Plaid link token
+  app.post("/api/plaid/link/token", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const linkTokenData = await plaidService.createLinkToken(req.user!.id);
+      res.json(linkTokenData);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Exchange Plaid public token and setup income sources
+  app.post("/api/plaid/link/bank", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { publicToken, institutionName } = req.body;
+
+      if (!publicToken || !institutionName) {
+        throw AppError.badRequest("Missing required information");
+      }
+
+      const exchangeResponse = await plaidService.exchangePublicToken(publicToken);
+
+      // Store the access token and item ID
+      const [bankAccount] = await db
+        .insert(bankAccounts)
+        .values({
+          userId: req.user!.id,
+          plaidAccessToken: exchangeResponse.access_token,
+          plaidItemId: exchangeResponse.item_id,
+          institutionName,
+        })
+        .returning();
+
+      // Fetch initial income data
+      const incomeData = await plaidService.getIncome(exchangeResponse.access_token);
+
+      // Create or update income sources based on Plaid data
+      if (incomeData.income_streams) {
+        for (const stream of incomeData.income_streams) {
+          await db
+            .insert(incomeSources)
+            .values({
+              userId: req.user!.id,
+              name: `${institutionName} - ${stream.name || 'Income'}`,
+              amount: stream.monthly_income.toString(),
+              frequency: 'monthly',
+              nextPaymentDate: new Date(stream.next_payment_date || Date.now()),
+              isActive: true,
+            })
+            .onConflictDoNothing();
+        }
+      }
+
+      res.json({
+        message: "Bank account linked successfully",
+        bankAccount: {
+          id: bankAccount.id,
+          institutionName: bankAccount.institutionName,
+        },
       });
     } catch (error) {
       next(error);

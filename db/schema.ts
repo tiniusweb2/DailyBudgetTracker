@@ -66,12 +66,25 @@ export const incomeSources = pgTable("income_sources", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Bank Accounts table for storing Plaid integration data
+export const bankAccounts = pgTable("bank_accounts", {
+  id: serial("id").primaryKey(),
+  userId: serial("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  plaidAccessToken: text("plaid_access_token").notNull(),
+  plaidItemId: text("plaid_item_id").notNull(),
+  institutionName: text("institution_name").notNull(),
+  lastSync: timestamp("last_sync"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Define relationships
 export const userRelations = relations(users, ({ many }) => ({
   transactions: many(transactions),
   dailyBudgets: many(dailyBudgets),
   plannedExpenses: many(plannedExpenses),
   incomeSources: many(incomeSources),
+  bankAccounts: many(bankAccounts),
 }));
 
 export const transactionRelations = relations(transactions, ({ one }) => ({
@@ -127,6 +140,8 @@ export type PlannedExpense = typeof plannedExpenses.$inferSelect;
 export type InsertPlannedExpense = typeof plannedExpenses.$inferInsert;
 export type IncomeSource = typeof incomeSources.$inferSelect;
 export type InsertIncomeSource = typeof incomeSources.$inferInsert;
+export type BankAccount = typeof bankAccounts.$inferSelect;
+export type InsertBankAccount = typeof bankAccounts.$inferInsert;
 
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
@@ -140,3 +155,5 @@ export const insertPlannedExpenseSchema = createInsertSchema(plannedExpenses);
 export const selectPlannedExpenseSchema = createSelectSchema(plannedExpenses);
 export const insertIncomeSourceSchema = createInsertSchema(incomeSources);
 export const selectIncomeSourceSchema = createSelectSchema(incomeSources);
+export const insertBankAccountSchema = createInsertSchema(bankAccounts);
+export const selectBankAccountSchema = createSelectSchema(bankAccounts);
