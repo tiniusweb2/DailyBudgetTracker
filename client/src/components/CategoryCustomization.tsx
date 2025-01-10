@@ -28,8 +28,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus } from "lucide-react";
-import * as Icons from "lucide-react";
+import { Loader2, Plus, Activity } from "lucide-react";
+import * as LucideIcons from "lucide-react";
 
 // Type definitions
 interface Category {
@@ -38,11 +38,6 @@ interface Category {
   icon: string;
   color: string;
 }
-
-// Available icons from lucide-react
-const availableIcons = Object.keys(Icons).filter(
-  (key) => typeof Icons[key as keyof typeof Icons] === "function"
-);
 
 // Available colors for categories
 const categoryColors = [
@@ -75,8 +70,12 @@ const formSchema = z.object({
 type FormData = z.infer<typeof formSchema>;
 
 export default function CategoryCustomization() {
-  const [selectedIcon, setSelectedIcon] = useState<string>("Shopping");
   const queryClient = useQueryClient();
+
+  // Get available icons from lucide-react
+  const availableIcons = Object.keys(LucideIcons).filter(
+    (key) => typeof LucideIcons[key as keyof typeof LucideIcons] === "function" && key !== "default"
+  );
 
   // Fetch existing categories
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<Category[]>({
@@ -109,7 +108,7 @@ export default function CategoryCustomization() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       name: "",
-      icon: "Shopping",
+      icon: "Activity",
       color: "bg-blue-500",
     },
   });
@@ -120,8 +119,8 @@ export default function CategoryCustomization() {
 
   // Helper function to render icon component
   const renderIcon = (iconName: string) => {
-    const IconComponent = Icons[iconName as keyof typeof Icons] as React.ComponentType<any>;
-    return IconComponent ? <IconComponent className="h-4 w-4" /> : null;
+    const Icon = LucideIcons[iconName as keyof typeof LucideIcons] as React.ComponentType<{ className?: string }>;
+    return Icon ? <Icon className="h-4 w-4" /> : <Activity className="h-4 w-4" />;
   };
 
   return (
@@ -187,26 +186,18 @@ export default function CategoryCustomization() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Icon</FormLabel>
-                      <Select
-                        onValueChange={(value) => {
-                          field.onChange(value);
-                          setSelectedIcon(value);
-                        }}
-                        defaultValue={field.value}
-                      >
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue>
-                              {field.value && (
-                                <div className="flex items-center gap-2">
-                                  {renderIcon(field.value)}
-                                  <span>{field.value}</span>
-                                </div>
-                              )}
+                              <div className="flex items-center gap-2">
+                                {renderIcon(field.value)}
+                                <span>{field.value}</span>
+                              </div>
                             </SelectValue>
                           </SelectTrigger>
                         </FormControl>
-                        <SelectContent className="h-[300px]">
+                        <SelectContent>
                           {availableIcons.map((icon) => (
                             <SelectItem key={icon} value={icon}>
                               <div className="flex items-center gap-2">
@@ -228,7 +219,7 @@ export default function CategoryCustomization() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Color</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue>

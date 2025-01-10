@@ -4,6 +4,14 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import CategoryCustomization from '../CategoryCustomization';
 
+// Mock lucide-react icons
+vi.mock('lucide-react', () => ({
+  Loader2: () => <div data-testid="loader-icon">Loading...</div>,
+  Plus: () => <div data-testid="plus-icon">Plus</div>,
+  ShoppingCart: () => <div data-testid="shopping-cart-icon">Shopping Cart</div>,
+  // Add more icon mocks as needed
+}));
+
 // Mock fetch globally
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -80,7 +88,12 @@ describe('CategoryCustomization', () => {
       if (url === '/api/categories' && options.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ id: 2, ...JSON.parse(options.body) })
+          json: () => Promise.resolve({ 
+            id: 2, 
+            name: 'Shopping',
+            icon: 'ShoppingCart',
+            color: 'bg-blue-500'
+          })
         });
       }
     });
@@ -90,13 +103,30 @@ describe('CategoryCustomization', () => {
     // Fill out the form
     await user.type(screen.getByPlaceholderText('e.g., Groceries'), 'Shopping');
 
+    // Open and select icon
+    const iconSelect = screen.getByLabelText('Icon');
+    await user.click(iconSelect);
+    await user.click(screen.getByText('ShoppingCart'));
+
+    // Open and select color
+    const colorSelect = screen.getByLabelText('Color');
+    await user.click(colorSelect);
+    await user.click(screen.getByText('Blue'));
+
     // Submit the form
     const submitButton = screen.getByText('Add Category');
     await user.click(submitButton);
 
     // Verify API call
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith('/api/categories', expect.any(Object));
+      expect(mockFetch).toHaveBeenCalledWith('/api/categories', expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Shopping',
+          icon: 'ShoppingCart',
+          color: 'bg-blue-500'
+        })
+      }));
     });
   });
 
@@ -106,39 +136,94 @@ describe('CategoryCustomization', () => {
       if (url === '/api/categories' && options.method === 'POST') {
         return Promise.resolve({
           ok: false,
-          text: () => Promise.resolve('Failed to create category')
+          status: 500,
+          text: () => Promise.resolve('Internal Server Error')
         });
       }
     });
 
     render(<CategoryCustomization />, { wrapper: createWrapper() });
 
-    // Fill out and submit the form
+    // Fill out form with minimum required fields
     await user.type(screen.getByPlaceholderText('e.g., Groceries'), 'Shopping');
     await user.click(screen.getByText('Add Category'));
 
     // Verify error handling
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith('/api/categories', expect.any(Object));
+      expect(screen.getByText(/failed to create category/i)).toBeInTheDocument();
     });
   });
 
-  it('allows icon and color selection', async () => {
-    const user = userEvent.setup();
+  it('displays loading state while fetching categories', async () => {
+    // Delay the mock response to test loading state
+    mockFetch.mockImplementationOnce(() => 
+      new Promise(resolve => 
+        setTimeout(() => 
+          resolve({
+            ok: true,
+            json: () => Promise.resolve([])
+          }), 100
+        )
+      )
+    );
+
     render(<CategoryCustomization />, { wrapper: createWrapper() });
 
-    // Open icon select
-    const iconTrigger = screen.getByLabelText('Icon');
-    await user.click(iconTrigger);
+    // Check for loading indicator
+    expect(screen.getByTestId('loader-icon')).toBeInTheDocument();
 
-    // Open color select
-    const colorTrigger = screen.getByLabelText('Color');
-    await user.click(colorTrigger);
-
-    // Verify select menus are visible
+    // Wait for loading to complete
     await waitFor(() => {
-      expect(screen.getByText('Select an icon')).toBeInTheDocument();
-      expect(screen.getByText('Select a color')).toBeInTheDocument();
+      expect(screen.queryByTestId('loader-icon')).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows empty state message when no categories exist', async () => {
+    mockFetch.mockImplementationOnce(() => 
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve([])
+      })
+    );
+
+    render(<CategoryCustomization />, { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      expect(screen.getByText(/no categories yet/i)).toBeInTheDocument();
+    });
+  });
+
+  it('prevents form submission while request is in progress', async () => {
+    const user = userEvent.setup();
+    let resolveRequest: (value: any) => void;
+
+    mockFetch.mockImplementationOnce(() => 
+      new Promise(resolve => {
+        resolveRequest = resolve;
+      })
+    );
+
+    render(<CategoryCustomization />, { wrapper: createWrapper() });
+
+    // Fill out and submit form
+    await user.type(screen.getByPlaceholderText('e.g., Groceries'), 'Shopping');
+    const submitButton = screen.getByText('Add Category');
+    await user.click(submitButton);
+
+    // Verify button is disabled during submission
+    expect(submitButton).toBeDisabled();
+    expect(screen.getByText(/creating/i)).toBeInTheDocument();
+
+    // Resolve the pending request
+    resolveRequest!({
+      ok: true,
+      json: () => Promise.resolve({ id: 1, name: 'Shopping' })
+    });
+
+    // Verify button is re-enabled
+    await waitFor(() => {
+      expect(submitButton).not.toBeDisabled();
+      expect(screen.queryByText(/creating/i)).not.toBeInTheDocument();
     });
   });
 });
