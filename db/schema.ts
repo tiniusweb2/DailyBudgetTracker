@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, decimal, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, decimal, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 import { z } from "zod";
@@ -48,9 +48,9 @@ export const plannedExpenses = pgTable("planned_expenses", {
   categoryId: serial("category_id").references(() => categories.id).notNull(),
   name: text("name").notNull(),
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  targetDate: timestamp("target_date").notNull(), // When you want to have this expense by
+  targetDate: timestamp("target_date").notNull(),
   isCompleted: boolean("is_completed").notNull().default(false),
-  dailyContribution: decimal("daily_contribution", { precision: 10, scale: 2 }).notNull(), // How much to save per day
+  dailyContribution: decimal("daily_contribution", { precision: 10, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -89,7 +89,7 @@ export const refreshTokens = pgTable("refresh_tokens", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Update userRelations to include refresh tokens
+// Relations
 export const userRelations = relations(users, ({ many }) => ({
   transactions: many(transactions),
   dailyBudgets: many(dailyBudgets),
@@ -106,20 +106,25 @@ export const refreshTokenRelations = relations(refreshTokens, ({ one }) => ({
   }),
 }));
 
-// Helper to convert decimal strings to numbers
-export function convertDecimalToNumber<T>(obj: T): T {
-  if (!obj || typeof obj !== 'object') return obj;
+// Schemas
+export const insertUserSchema = createInsertSchema(users);
+export const selectUserSchema = createSelectSchema(users);
+export const insertTransactionSchema = createInsertSchema(transactions);
+export const selectTransactionSchema = createSelectSchema(transactions);
+export const insertCategorySchema = createInsertSchema(categories);
+export const selectCategorySchema = createSelectSchema(categories);
+export const insertDailyBudgetSchema = createInsertSchema(dailyBudgets);
+export const selectDailyBudgetSchema = createSelectSchema(dailyBudgets);
+export const insertPlannedExpenseSchema = createInsertSchema(plannedExpenses);
+export const selectPlannedExpenseSchema = createSelectSchema(plannedExpenses);
+export const insertIncomeSourceSchema = createInsertSchema(incomeSources);
+export const selectIncomeSourceSchema = createSelectSchema(incomeSources);
+export const insertBankAccountSchema = createInsertSchema(bankAccounts);
+export const selectBankAccountSchema = createSelectSchema(bankAccounts);
+export const insertRefreshTokenSchema = createInsertSchema(refreshTokens);
+export const selectRefreshTokenSchema = createSelectSchema(refreshTokens);
 
-  const newObj = { ...obj };
-  for (const [key, value] of Object.entries(newObj)) {
-    if (typeof value === 'string' && /^\d+\.\d+$/.test(value)) {
-      (newObj as any)[key] = parseFloat(value);
-    }
-  }
-  return newObj;
-}
-
-// Export types and schemas
+// Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
@@ -137,19 +142,15 @@ export type InsertBankAccount = typeof bankAccounts.$inferInsert;
 export type RefreshToken = typeof refreshTokens.$inferSelect;
 export type InsertRefreshToken = typeof refreshTokens.$inferInsert;
 
-export const insertUserSchema = createInsertSchema(users);
-export const selectUserSchema = createSelectSchema(users);
-export const insertTransactionSchema = createInsertSchema(transactions);
-export const selectTransactionSchema = createSelectSchema(transactions);
-export const insertCategorySchema = createInsertSchema(categories);
-export const selectCategorySchema = createSelectSchema(categories);
-export const insertDailyBudgetSchema = createInsertSchema(dailyBudgets);
-export const selectDailyBudgetSchema = createSelectSchema(dailyBudgets);
-export const insertPlannedExpenseSchema = createInsertSchema(plannedExpenses);
-export const selectPlannedExpenseSchema = createSelectSchema(plannedExpenses);
-export const insertIncomeSourceSchema = createInsertSchema(incomeSources);
-export const selectIncomeSourceSchema = createSelectSchema(incomeSources);
-export const insertBankAccountSchema = createInsertSchema(bankAccounts);
-export const selectBankAccountSchema = createSelectSchema(bankAccounts);
-export const insertRefreshTokenSchema = createInsertSchema(refreshTokens);
-export const selectRefreshTokenSchema = createSelectSchema(refreshTokens);
+// Helper to convert decimal strings to numbers
+export function convertDecimalToNumber<T>(obj: T): T {
+  if (!obj || typeof obj !== 'object') return obj;
+
+  const newObj = { ...obj };
+  for (const [key, value] of Object.entries(newObj)) {
+    if (typeof value === 'string' && /^\d+\.\d+$/.test(value)) {
+      (newObj as any)[key] = parseFloat(value);
+    }
+  }
+  return newObj;
+}

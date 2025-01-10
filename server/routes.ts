@@ -1,6 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { setupAuth } from "./auth";
 import { DrizzleTransactionRepository } from "./data/repositories/TransactionRepository";
 import { DrizzleUserRepository } from "./data/repositories/UserRepository";
 import { DrizzleDailyBudgetRepository } from "./data/repositories/DailyBudgetRepository";
@@ -19,9 +18,6 @@ export function registerRoutes(app: Express): Server {
   const dailyBudgetRepo = new DrizzleDailyBudgetRepository();
   const plannedExpenseRepo = new DrizzlePlannedExpenseRepository();
 
-  // Setup authentication routes
-  setupAuth(app);
-
   // Middleware to ensure user is authenticated
   const requireAuth = (req: Request, res: Response, next: NextFunction) => {
     if (!req.isAuthenticated()) {
@@ -30,30 +26,30 @@ export function registerRoutes(app: Express): Server {
     next();
   };
 
+  // Basic health check endpoint
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
+  // Protected routes - all require authentication
+  app.use("/api/transactions", requireAuth);
+  app.use("/api/budget", requireAuth);
+  app.use("/api/planned-expenses", requireAuth);
+  app.use("/api/plaid", requireAuth);
+
   // Get user's transactions and budget data
-  app.get("/api/transactions", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  app.get("/api/transactions", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const today = new Date();
       const sevenDaysAgo = subDays(today, 7);
 
-      // Get all transactions for the user
       const transactions = await transactionRepo.findByUserId(req.user!.id);
       const recentTransactions = transactions.filter(t =>
         t.createdAt >= startOfDay(sevenDaysAgo) &&
         t.createdAt <= endOfDay(today)
       );
 
-      // Get user's current daily budget
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
-
-      // Get budget history for the last 7 days
-      const dailyBudgets = await dailyBudgetRepo.findByUserId(req.user!.id);
-      const recentBudgets = dailyBudgets.filter(b =>
-        b.date >= startOfDay(sevenDaysAgo) &&
-        b.date <= endOfDay(today)
-      );
-
-      // Get planned expenses daily contribution
       const plannedExpensesContribution = await plannedExpenseRepo.calculateDailyContributions(req.user!.id);
 
       res.json({
@@ -63,11 +59,7 @@ export function registerRoutes(app: Express): Server {
           spent: dailyBudget.spent,
           saved: dailyBudget.saved,
           plannedExpensesContribution
-        },
-        dailyBudgets: recentBudgets.map(b => ({
-          ...b,
-          available: b.budgetAmount - b.spent
-        }))
+        }
       });
     } catch (error) {
       next(error);
@@ -75,7 +67,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get all planned expenses
-  app.get("/api/planned-expenses", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  app.get("/api/planned-expenses", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const expenses = await plannedExpenseRepo.findByUserId(req.user!.id);
       res.json(expenses);
@@ -85,7 +77,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Add new planned expense
-  app.post("/api/planned-expenses", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  app.post("/api/planned-expenses", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { name, amount, targetDate, categoryId } = req.body;
 
@@ -114,7 +106,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Update planned expense
-  app.patch("/api/planned-expenses/:id", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  app.patch("/api/planned-expenses/:id", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { name, amount, targetDate, isCompleted } = req.body;
       const updates: any = {};
@@ -136,7 +128,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Add new transaction with automatic categorization
-  app.post("/api/transactions", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  app.post("/api/transactions", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { amount, description } = req.body;
 
@@ -171,7 +163,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Update daily budget amount
-  app.patch("/api/budget", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  app.patch("/api/budget", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { amount } = req.body;
 
@@ -199,7 +191,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get Plaid link token
-  app.post("/api/plaid/link/token", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  app.post("/api/plaid/link/token", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const linkTokenData = await plaidService.createLinkToken(req.user!.id);
       res.json(linkTokenData);
@@ -209,7 +201,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Exchange Plaid public token and setup income sources
-  app.post("/api/plaid/link/bank", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  app.post("/api/plaid/link/bank", async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { publicToken, institutionName } = req.body;
 
