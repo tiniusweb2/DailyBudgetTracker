@@ -68,10 +68,9 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
-// Separate component for icon display
-const IconDisplay = ({ iconName }: { iconName: string }) => {
-  const Icon = LucideIcons[iconName as keyof typeof LucideIcons] as React.ComponentType<{ className?: string }> || Activity;
-  return <Icon className="h-4 w-4" />;
+const IconDisplay = ({ iconName, className }: { iconName: string; className?: string }) => {
+  const IconComponent = (LucideIcons[iconName as keyof typeof LucideIcons] || Activity) as React.ComponentType<{ className?: string }>;
+  return <IconComponent className={className || "h-4 w-4"} />;
 };
 
 export default function CategoryCustomization() {
@@ -191,17 +190,17 @@ export default function CategoryCustomization() {
                             <SelectValue>
                               <div className="flex items-center gap-2">
                                 <IconDisplay iconName={field.value} />
-                                {field.value}
+                                <span>{field.value}</span>
                               </div>
                             </SelectValue>
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           {availableIcons.map((icon) => (
-                            <SelectItem key={icon} value={icon}>
+                            <SelectItem key={icon} value={icon} textValue={icon}>
                               <div className="flex items-center gap-2">
                                 <IconDisplay iconName={icon} />
-                                {icon}
+                                <span>{icon}</span>
                               </div>
                             </SelectItem>
                           ))}
@@ -226,19 +225,21 @@ export default function CategoryCustomization() {
                                 <div
                                   className={`h-4 w-4 rounded ${field.value}`}
                                 />
-                                {categoryColors.find((c) => c.value === field.value)?.name}
+                                <span>
+                                  {categoryColors.find((c) => c.value === field.value)?.name}
+                                </span>
                               </div>
                             </SelectValue>
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           {categoryColors.map((color) => (
-                            <SelectItem key={color.value} value={color.value}>
+                            <SelectItem key={color.value} value={color.value} textValue={color.name}>
                               <div className="flex items-center gap-2">
                                 <div
                                   className={`h-4 w-4 rounded ${color.value}`}
                                 />
-                                {color.name}
+                                <span>{color.name}</span>
                               </div>
                             </SelectItem>
                           ))}
