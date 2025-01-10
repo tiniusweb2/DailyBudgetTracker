@@ -45,6 +45,7 @@ export default function BudgetSetupForm() {
       setIsSubmitting(true);
       const numAmount = parseFloat(data.amount);
       await updateBudget(numAmount);
+      form.reset({ amount: numAmount.toString() });
     } catch (error) {
       console.error('Failed to update budget:', error);
     } finally {
@@ -53,7 +54,7 @@ export default function BudgetSetupForm() {
   };
 
   return (
-    <Card>
+    <Card className="w-full">
       <CardHeader>
         <CardTitle>Set Daily Budget</CardTitle>
         <CardDescription>
@@ -71,7 +72,7 @@ export default function BudgetSetupForm() {
                   <FormLabel>Daily Budget Amount</FormLabel>
                   <FormControl>
                     <div className="relative">
-                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 h-4 w-4" />
+                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
                       <Input
                         {...field}
                         type="number"
@@ -89,7 +90,11 @@ export default function BudgetSetupForm() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
+            <Button 
+              type="submit" 
+              className="w-full" 
+              disabled={isSubmitting || !form.formState.isDirty}
+            >
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
