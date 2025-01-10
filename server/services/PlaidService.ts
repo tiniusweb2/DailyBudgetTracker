@@ -23,7 +23,7 @@ class PlaidService {
       const request = {
         user: { client_user_id: userId.toString() },
         client_name: 'Finance Manager',
-        products: ['transactions', 'income'] as Products[],
+        products: ['transactions'] as Products[], 
         country_codes: ['US'] as CountryCode[],
         language: 'en',
       };
@@ -56,12 +56,10 @@ class PlaidService {
 
   async getIncome(accessToken: string) {
     try {
-      // First get the user's accounts
       const accountsResponse = await this.client.accountsGet({
         access_token: accessToken,
       });
 
-      // Then get the income data using transactions
       const now = new Date();
       const sixMonthsAgo = new Date(now.setMonth(now.getMonth() - 6));
 
@@ -74,13 +72,12 @@ class PlaidService {
         }
       });
 
-      // Calculate monthly income from transactions
       const incomeTransactions = transactionsResponse.data.transactions.filter(
-        transaction => transaction.amount < 0 // Credits are negative in Plaid
+        transaction => transaction.amount < 0 
       );
 
       const monthlyIncome = incomeTransactions.reduce((sum, transaction) => 
-        sum + Math.abs(transaction.amount), 0) / 6; // Average over 6 months
+        sum + Math.abs(transaction.amount), 0) / 6; 
 
       return {
         income_streams: [{
