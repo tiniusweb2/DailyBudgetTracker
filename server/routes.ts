@@ -12,6 +12,7 @@ import { bankAccounts, incomeSources } from "@db/schema";
 import { db } from "@db";
 import { convertDecimalToNumber } from "@db/schema";
 import { requireAuth } from "./auth";
+import type { DailyBudgetStatus } from "./domain/entities/DailyBudget";
 
 export function registerRoutes(app: Express): Server {
   // Initialize repositories
@@ -25,11 +26,37 @@ export function registerRoutes(app: Express): Server {
     res.json({ status: "ok" });
   });
 
-  // Protected routes - all require authentication
+  // Protected routes - require authentication
   app.use("/api/transactions", requireAuth);
   app.use("/api/budget", requireAuth);
   app.use("/api/planned-expenses", requireAuth);
   app.use("/api/plaid", requireAuth);
+
+  // Get user's current budget status
+  app.get("/api/budget/status", async (req, res, next) => {
+    try {
+      const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
+      const unspentFromPrevious = await dailyBudgetRepo.getUnspentAmount(req.user!.id);
+      const plannedExpensesAmount = await plannedExpenseRepo.calculateDailyContributions(req.user!.id);
+
+      // Calculate total available including rollover from previous days
+      const budget = convertDecimalToNumber(dailyBudget);
+      const totalAvailable = budget.budgetAmount + unspentFromPrevious - budget.spent - plannedExpensesAmount;
+
+      const status: DailyBudgetStatus = {
+        dailyBudget: budget.budgetAmount,
+        available: totalAvailable,
+        spent: budget.spent,
+        saved: budget.saved,
+        rollover: unspentFromPrevious,
+        plannedExpenses: plannedExpensesAmount
+      };
+
+      res.json(status);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   // Get user's transactions and budget data
   app.get("/api/transactions", async (req, res, next) => {
@@ -63,6 +90,7 @@ export function registerRoutes(app: Express): Server {
       next(error);
     }
   });
+
 
   // Get all planned expenses
   app.get("/api/planned-expenses", async (req, res, next) => {
@@ -136,21 +164,35 @@ export function registerRoutes(app: Express): Server {
         throw AppError.badRequest("Invalid budget amount");
       }
 
-      const amountString = amount.toFixed(2);
-
+      // Update user's base daily budget amount
       await userRepo.update(req.user!.id, {
-        dailyBudgetAmount: amountString
+        dailyBudgetAmount: amount
       });
 
-      // Update current day's budget amount
+      // Update current day's budget
       const dailyBudget = await dailyBudgetRepo.getCurrentDayBudget(req.user!.id);
       await dailyBudgetRepo.update(dailyBudget.id, {
-        budgetAmount: amountString
+        budgetAmount: amount
       });
+
+      // Get updated budget status
+      const unspentFromPrevious = await dailyBudgetRepo.getUnspentAmount(req.user!.id);
+      const plannedExpensesAmount = await plannedExpenseRepo.calculateDailyContributions(req.user!.id);
+
+      const totalAvailable = amount + unspentFromPrevious - dailyBudget.spent - plannedExpensesAmount;
+
+      const status: DailyBudgetStatus = {
+        dailyBudget: amount,
+        available: totalAvailable,
+        spent: dailyBudget.spent,
+        saved: dailyBudget.saved,
+        rollover: unspentFromPrevious,
+        plannedExpenses: plannedExpensesAmount
+      };
 
       res.json({
         message: "Budget updated successfully",
-        dailyBudgetAmount: amount
+        ...status
       });
     } catch (error) {
       next(error);
