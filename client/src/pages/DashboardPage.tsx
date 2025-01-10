@@ -3,6 +3,7 @@ import BudgetDisplay from "@/components/BudgetDisplay";
 import BudgetSetupForm from "@/components/BudgetSetupForm";
 import TransactionList from "@/components/TransactionList";
 import BudgetChart from "@/components/BudgetChart";
+import BankLinkButton from "@/components/BankLinkButton";
 import { useUser } from "@/hooks/use-user";
 
 export default function DashboardPage() {
@@ -18,7 +19,10 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-6">
           <BudgetSetupForm />
-          <BudgetDisplay />
+          <div className="space-y-4">
+            <BudgetDisplay />
+            <BankLinkButton />
+          </div>
         </div>
 
         <div className="py-6">

@@ -4,11 +4,13 @@ import { DrizzleTransactionRepository } from "./data/repositories/TransactionRep
 import { DrizzleUserRepository } from "./data/repositories/UserRepository";
 import { DrizzleDailyBudgetRepository } from "./data/repositories/DailyBudgetRepository";
 import { DrizzlePlannedExpenseRepository } from "./data/repositories/PlannedExpenseRepository";
-import { startOfDay, endOfDay, subDays, differenceInDays } from "date-fns";
+import { startOfDay, endOfDay, subDays } from "date-fns";
 import { AppError } from "./domain/errors/AppError";
 import { requireAuth } from "./auth";
 import type { DailyBudgetStatus } from "./domain/entities/DailyBudget";
+import { plaidService } from "./services/PlaidService";
 import { db } from "@db";
+import { bankAccounts } from "@db/schema";
 
 export function registerRoutes(app: Express): Server {
   // Initialize repositories
@@ -26,6 +28,46 @@ export function registerRoutes(app: Express): Server {
   app.use("/api/budget", requireAuth);
   app.use("/api/transactions", requireAuth);
   app.use("/api/planned-expenses", requireAuth);
+  app.use("/api/plaid", requireAuth);
+
+  // Plaid routes
+  app.post("/api/plaid/link/token", async (req, res, next) => {
+    try {
+      const linkTokenResponse = await plaidService.createLinkToken(req.user!.id);
+      res.json(linkTokenResponse);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/plaid/link/bank", async (req, res, next) => {
+    try {
+      const { publicToken, institutionName } = req.body;
+      const exchangeResponse = await plaidService.exchangePublicToken(publicToken);
+
+      // Save the access token and item ID
+      await db.insert(bankAccounts).values({
+        userId: req.user!.id,
+        plaidAccessToken: exchangeResponse.access_token,
+        plaidItemId: exchangeResponse.item_id,
+        institutionName,
+        isActive: true,
+      });
+
+      // Get initial transaction history
+      const now = new Date();
+      const thirtyDaysAgo = subDays(now, 30);
+      await plaidService.getTransactions(
+        exchangeResponse.access_token,
+        thirtyDaysAgo.toISOString().split('T')[0],
+        now.toISOString().split('T')[0]
+      );
+
+      res.json({ message: "Bank account linked successfully" });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   // Get current budget status
   app.get("/api/budget/status", async (req, res, next) => {
