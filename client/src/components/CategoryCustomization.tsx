@@ -31,6 +31,14 @@ import {
 import { Loader2, Plus } from "lucide-react";
 import * as Icons from "lucide-react";
 
+// Type definitions
+interface Category {
+  id: number;
+  name: string;
+  icon: string;
+  color: string;
+}
+
 // Available icons from lucide-react
 const availableIcons = Object.keys(Icons).filter(
   (key) => typeof Icons[key as keyof typeof Icons] === "function"
@@ -71,7 +79,7 @@ export default function CategoryCustomization() {
   const queryClient = useQueryClient();
 
   // Fetch existing categories
-  const { data: categories, isLoading: categoriesLoading } = useQuery({
+  const { data: categories = [], isLoading: categoriesLoading } = useQuery<Category[]>({
     queryKey: ["/api/categories"],
   });
 
@@ -130,8 +138,8 @@ export default function CategoryCustomization() {
                 <div className="col-span-2 flex justify-center py-4">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : categories?.length > 0 ? (
-                categories.map((category: any) => {
+              ) : categories.length > 0 ? (
+                categories.map((category) => {
                   const CategoryIcon = Icons[category.icon as keyof typeof Icons] as React.ComponentType<any>;
                   return (
                     <div
