@@ -3,11 +3,12 @@ import BudgetDisplay from "@/components/BudgetDisplay";
 import BudgetSetupForm from "@/components/BudgetSetupForm";
 import SpendingInsights from "@/components/SpendingInsights";
 import BudgetMoodCalendar from "@/components/BudgetMoodCalendar";
+import CategoryCustomization from "@/components/CategoryCustomization";
 import { useBudget } from "@/hooks/use-budget";
 import { Loader2 } from "lucide-react";
 
 export default function BudgetDashboard() {
-  const { budgetStatus, isLoading, error } = useBudget();
+  const { budgetStatus, isLoading } = useBudget();
 
   if (isLoading) {
     return (
@@ -17,10 +18,10 @@ export default function BudgetDashboard() {
     );
   }
 
-  if (error) {
+  if (!budgetStatus) {
     return (
       <Alert variant="destructive" className="max-w-md mx-auto mt-8">
-        <AlertDescription>{error.message}</AlertDescription>
+        <AlertDescription>Failed to load budget status</AlertDescription>
       </Alert>
     );
   }
@@ -35,6 +36,7 @@ export default function BudgetDashboard() {
             <BudgetSetupForm />
           </div>
           <SpendingInsights />
+          <CategoryCustomization />
         </div>
         <div>
           <BudgetMoodCalendar />
