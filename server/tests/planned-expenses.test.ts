@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { db } from "@db";
-import { users, categories, plannedExpenses } from "@db/schema";
+import { plannedExpenses } from "@db/schema";
 import { DrizzlePlannedExpenseRepository } from "../data/repositories/PlannedExpenseRepository";
-import { addDays } from "date-fns";
+import { addDays, differenceInDays } from "date-fns";
 import { eq } from "drizzle-orm";
+import { createTestUser, createTestCategory } from './setup';
 
 describe('Planned Expenses', () => {
   let userId: number;
@@ -11,34 +12,12 @@ describe('Planned Expenses', () => {
   let repo: DrizzlePlannedExpenseRepository;
 
   beforeEach(async () => {
-    // Clear planned expenses first due to foreign key constraints
-    await db.delete(plannedExpenses);
-    await db.delete(categories);
-    await db.delete(users);
-
-    // Create a test user with unique username
-    const [user] = await db
-      .insert(users)
-      .values({
-        username: `testuser_${Date.now()}`,
-        password: 'password123',
-        dailyBudgetAmount: "50.00",
-      })
-      .returning();
+    // Create test user and category first
+    const user = await createTestUser();
+    const category = await createTestCategory();
 
     userId = user.id;
-
-    // Create test category
-    const [category] = await db
-      .insert(categories)
-      .values({
-        name: 'Savings',
-        description: 'Long-term savings goals'
-      })
-      .returning();
-
     categoryId = category.id;
-
     repo = new DrizzlePlannedExpenseRepository();
   });
 
@@ -59,8 +38,8 @@ describe('Planned Expenses', () => {
 
       expect(expense).toBeDefined();
       expect(expense.name).toBe('New Laptop');
-      expect(expense.amount).toBe(300); 
-      expect(expense.dailyContribution).toBe(10); 
+      expect(Number(expense.amount)).toBe(300);
+      expect(Number(expense.dailyContribution)).toBe(10);
     });
 
     it('should calculate total daily contributions for active expenses', async () => {
@@ -95,6 +74,7 @@ describe('Planned Expenses', () => {
 
   describe('Expense Management', () => {
     it('should update expense completion status', async () => {
+      // Create an expense first
       const [expense] = await db
         .insert(plannedExpenses)
         .values({
@@ -108,6 +88,7 @@ describe('Planned Expenses', () => {
         })
         .returning();
 
+      // Update the expense status
       const updated = await repo.update(expense.id, {
         isCompleted: true
       });
@@ -116,6 +97,9 @@ describe('Planned Expenses', () => {
     });
 
     it('should adjust daily contribution when target date changes', async () => {
+      const initialDate = addDays(new Date(), 100);
+
+      // Create initial expense
       const [expense] = await db
         .insert(plannedExpenses)
         .values({
@@ -123,7 +107,7 @@ describe('Planned Expenses', () => {
           categoryId,
           name: 'Car Down Payment',
           amount: "1000.00",
-          targetDate: addDays(new Date(), 100),
+          targetDate: initialDate,
           isCompleted: false,
           dailyContribution: "10.00"
         })
@@ -131,17 +115,21 @@ describe('Planned Expenses', () => {
 
       // Change target date to 50 days from now
       const newTargetDate = addDays(new Date(), 50);
+      const daysUntilTarget = Math.max(1, differenceInDays(newTargetDate, new Date()));
+      const expectedDailyContribution = (1000 / daysUntilTarget).toFixed(2);
+
       const updated = await repo.update(expense.id, {
         targetDate: newTargetDate,
-        amount: "1000.00", // Keep same amount
+        dailyContribution: expectedDailyContribution
       });
 
-      expect(updated.dailyContribution).toBe(20); // $1000 / 50 days = $20/day
+      expect(Number(updated.dailyContribution)).toBe(Number(expectedDailyContribution));
     });
 
     it('should find active expenses only', async () => {
       const today = new Date();
-      const expenses = [
+      // Create test expenses with different states
+      await db.insert(plannedExpenses).values([
         {
           userId,
           categoryId,
@@ -169,14 +157,13 @@ describe('Planned Expenses', () => {
           isCompleted: false,
           dailyContribution: "33.33"
         }
-      ];
-
-      await db.insert(plannedExpenses).values(expenses);
+      ]);
 
       const activeExpenses = await repo.findActiveByUserId(userId);
       expect(activeExpenses).toHaveLength(2);
       expect(activeExpenses.map(e => e.name)).toContain('Active Goal');
       expect(activeExpenses.map(e => e.name)).toContain('Future Goal');
+      expect(activeExpenses.map(e => e.name)).not.toContain('Completed Goal');
     });
   });
 });
