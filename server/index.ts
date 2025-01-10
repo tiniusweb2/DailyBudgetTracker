@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
 import { setupVite, serveStatic, log } from "./vite";
-import { db } from "@db";
+import { db, verifyDatabaseConnection } from "@db";
 import { sql } from "drizzle-orm";
 
 const app = express();
@@ -55,7 +55,7 @@ const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunct
   try {
     // Verify database connection before proceeding
     console.log("Verifying database connection...");
-    await db.execute(sql`SELECT 1`);
+    await verifyDatabaseConnection();
     console.log("Database connection verified");
 
     // Setup authentication routes first
