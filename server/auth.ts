@@ -2,10 +2,11 @@ import passport from "passport";
 import { IVerifyOptions, Strategy as LocalStrategy } from "passport-local";
 import { type Express } from "express";
 import session from "express-session";
+import cookieParser from "cookie-parser";
 import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { users } from "@db/schema";
+import { users, type InsertUser } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 import { AppError } from "./domain/errors/AppError";
@@ -50,28 +51,25 @@ export async function comparePasswords(
 }
 
 export function setupAuth(app: Express) {
+  // Add cookie parser before session middleware
+  app.use(cookieParser());
+
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID || "secure-session-secret",
     resave: false,
     saveUninitialized: false,
+    store: new MemoryStore({
+      checkPeriod: 86400000, // prune expired entries every 24h
+    }),
+    name: 'financeapp.sid',
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax'
-    },
-    store: new MemoryStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
-      ttl: 24 * 60 * 60 * 1000 // Match cookie maxAge
-    }),
-    name: 'financeapp.sid' // Custom session cookie name
+    }
   };
-
-  if (app.get("env") === "production") {
-    app.set("trust proxy", 1);
-    sessionSettings.cookie!.secure = true;
-  }
 
   app.use(session(sessionSettings));
   app.use(passport.initialize());
@@ -136,6 +134,7 @@ export function setupAuth(app: Express) {
         throw AppError.badRequest("Username and password are required");
       }
 
+      // Check if user already exists
       const [existingUser] = await db
         .select()
         .from(users)
@@ -147,6 +146,8 @@ export function setupAuth(app: Express) {
       }
 
       const hashedPassword = await hashPassword(password);
+
+      // Create the new user
       const [user] = await db
         .insert(users)
         .values({
@@ -159,7 +160,19 @@ export function setupAuth(app: Express) {
       // Don't send password to client
       const { password: _, ...safeUser } = user;
 
-      req.logIn(safeUser, (err) => {
+      // Create refresh token
+      const refreshToken = await TokenService.createRefreshToken(user.id);
+
+      // Set refresh token cookie
+      res.cookie('refreshToken', refreshToken.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+
+      // Log the user in
+      req.login(safeUser, (err) => {
         if (err) {
           return next(err);
         }
@@ -169,6 +182,9 @@ export function setupAuth(app: Express) {
         });
       });
     } catch (error) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
       next(error);
     }
   });
@@ -178,34 +194,35 @@ export function setupAuth(app: Express) {
       if (err) {
         return next(err);
       }
+
       if (!user) {
         return res.status(400).json({ message: info.message || "Login failed" });
       }
 
+      // Create refresh token before logging in
       try {
-        // Create refresh token
         const refreshToken = await TokenService.createRefreshToken(user.id);
 
-        req.logIn(user, (err) => {
+        // Set refresh token cookie
+        res.cookie('refreshToken', refreshToken.token, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+
+        // Log the user in after setting cookie
+        req.login(user, (err) => {
           if (err) {
             return next(err);
           }
-
-          // Set refresh token in HTTP-only cookie
-          res.cookie('refreshToken', refreshToken.token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-          });
-
           return res.json({
             message: "Login successful",
             user
           });
         });
       } catch (error) {
-        next(error);
+        return next(error);
       }
     })(req, res, next);
   });
@@ -218,31 +235,40 @@ export function setupAuth(app: Express) {
         throw AppError.unauthorized("No refresh token provided");
       }
 
-      const newRefreshToken = await TokenService.replaceRefreshToken(oldToken);
-
-      // Set new refresh token in cookie
-      res.cookie('refreshToken', newRefreshToken.token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-      });
+      let refreshToken;
+      try {
+        refreshToken = await TokenService.replaceRefreshToken(oldToken);
+      } catch (error) {
+        if (error instanceof AppError) {
+          throw error;
+        }
+        throw AppError.unauthorized("Invalid refresh token");
+      }
 
       // Get user data
       const [user] = await db
         .select()
         .from(users)
-        .where(eq(users.id, newRefreshToken.userId))
+        .where(eq(users.id, refreshToken.userId))
         .limit(1);
 
       if (!user) {
         throw AppError.unauthorized("User not found");
       }
 
+      // Remove password from user object
       const { password: _, ...safeUser } = user;
 
+      // Set refresh token cookie
+      res.cookie('refreshToken', refreshToken.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+
       // Log the user in
-      req.logIn(safeUser, (err) => {
+      req.login(safeUser, (err) => {
         if (err) {
           return next(err);
         }
@@ -253,36 +279,69 @@ export function setupAuth(app: Express) {
         });
       });
     } catch (error) {
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
       next(error);
     }
   });
 
-  app.post("/api/logout", async (req, res) => {
+  app.post("/api/logout", (req, res, next) => {
     try {
       const refreshToken = req.cookies.refreshToken;
 
-      if (refreshToken) {
-        await TokenService.revokeRefreshToken(refreshToken);
+      // Clear refresh token cookie
+      res.clearCookie('refreshToken', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax'
+      });
+
+      const promises = [];
+
+      // Add session destruction if it exists
+      if (req.session) {
+        promises.push(
+          new Promise<void>((resolve, reject) => {
+            req.session.destroy((err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          })
+        );
       }
 
-      // Clear refresh token cookie
-      res.clearCookie('refreshToken');
+      // Add token revocation if it exists
+      if (refreshToken) {
+        promises.push(
+          TokenService.revokeRefreshToken(refreshToken)
+            .catch(err => {
+              console.error('Error revoking token:', err);
+              // Don't fail the logout if token revocation fails
+            })
+        );
+      }
 
-      req.logout((err) => {
-        if (err) {
-          return res.status(500).json({ message: "Logout failed" });
-        }
-        res.json({ message: "Logged out successfully" });
-      });
+      // Handle all cleanup operations
+      Promise.all(promises)
+        .then(() => {
+          req.logout(() => {
+            res.json({ message: "Logged out successfully" });
+          });
+        })
+        .catch(next);
     } catch (error) {
-      res.status(500).json({ message: "Logout failed" });
+      if (error instanceof AppError) {
+        return res.status(error.statusCode).json({ message: error.message });
+      }
+      next(error);
     }
   });
 
   app.get("/api/user", (req, res) => {
-    if (req.isAuthenticated()) {
-      return res.json(req.user);
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Not authenticated" });
     }
-    res.status(401).json({ message: "Not authenticated" });
+    res.json(req.user);
   });
 }

@@ -1,126 +1,264 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { db } from '../db';
-import { comparePasswords, hashPassword } from '../data/utils/auth';
-import { users } from '../db/schema';
+import { db } from '@db';
+import { comparePasswords, hashPassword } from '../auth';
+import { users } from '@db/schema';
 import { eq } from 'drizzle-orm';
-import type { Request, Response } from 'express';
+import express from 'express';
+import { setupAuth } from '../auth';
+import { registerRoutes } from '../routes';
+import supertest from 'supertest';
+import { TokenService } from '../services/TokenService';
 
 describe('Authentication', () => {
+  let app: express.Express;
+  let request: supertest.SuperTest<supertest.Test>;
+
   beforeEach(async () => {
-    // Clear users table
+    // Clear users table before each test
     await db.delete(users);
+
+    // Setup express app with auth
+    app = express();
+    app.use(express.json());
+    setupAuth(app);
+    registerRoutes(app);
+    request = supertest(app);
   });
 
-  it('should create a new user', async () => {
-    const userData = {
-      username: 'testuser',
-      password: 'password123',
-      dailyBudgetAmount: "50.00",
-    };
+  describe('Registration', () => {
+    it('should create a new user with hashed password', async () => {
+      const response = await request
+        .post('/api/register')
+        .send({
+          username: 'testuser',
+          password: 'password123',
+          dailyBudgetAmount: "50.00"
+        });
 
-    const [user] = await db.insert(users).values(userData).returning();
-    expect(user.id).toBeDefined();
-    expect(user.username).toBe(userData.username);
-    expect(user.dailyBudgetAmount).toBe(userData.dailyBudgetAmount);
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('Registration successful');
+      expect(response.body.user.username).toBe('testuser');
+
+      // Verify password was hashed
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, 'testuser'))
+        .limit(1);
+
+      expect(user.password).not.toBe('password123');
+      expect(await comparePasswords('password123', user.password)).toBe(true);
+    });
+
+    it('should prevent duplicate usernames', async () => {
+      // Create first user
+      await request
+        .post('/api/register')
+        .send({
+          username: 'testuser',
+          password: 'password123',
+          dailyBudgetAmount: "50.00"
+        });
+
+      // Try to create second user with same username
+      const response = await request
+        .post('/api/register')
+        .send({
+          username: 'testuser',
+          password: 'different123',
+          dailyBudgetAmount: "50.00"
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Username already exists');
+    });
   });
 
-  it('should not create user with duplicate username', async () => {
-    const userData = {
-      username: 'testuser',
-      password: await hashPassword('password123'),
-      dailyBudgetAmount: "50.00",
-    };
+  describe('Login', () => {
+    beforeEach(async () => {
+      // Create a test user
+      await request
+        .post('/api/register')
+        .send({
+          username: 'testuser',
+          password: 'password123',
+          dailyBudgetAmount: "50.00"
+        });
+    });
 
-    await db.insert(users).values(userData);
-    await expect(db.insert(users).values(userData)).rejects.toThrow();
-  });
-
-  it('should find user by username', async () => {
-    const userData = {
-      username: 'testuser',
-      password: await hashPassword('password123'),
-      dailyBudgetAmount: "50.00",
-    };
-
-    await db.insert(users).values(userData);
-    const [foundUser] = await db
-      .select()
-      .from(users)
-      .where(eq(users.username, 'testuser'))
-      .limit(1);
-
-    expect(foundUser).toBeDefined();
-    expect(foundUser.username).toBe(userData.username);
-  });
-
-  it('should verify password correctly', async () => {
-    const password = 'password123';
-    const hashedPassword = await hashPassword(password);
-    const isValid = await comparePasswords(password, hashedPassword);
-    expect(isValid).toBe(true);
-  });
-
-  it('should not verify incorrect password', async () => {
-    const password = 'password123';
-    const wrongPassword = 'wrongpassword';
-    const hashedPassword = await hashPassword(password);
-    const isValid = await comparePasswords(wrongPassword, hashedPassword);
-    expect(isValid).toBe(false);
-  });
-
-  describe('Session Management', () => {
-    it('should maintain user session after login', async () => {
-      const mockReq = {
-        logIn: vi.fn((user, cb) => cb()),
-        body: {
+    it('should login with correct credentials and create session', async () => {
+      const response = await request
+        .post('/api/login')
+        .send({
           username: 'testuser',
           password: 'password123'
-        }
-      } as unknown as Request;
+        });
 
-      const mockRes = {
-        json: vi.fn(),
-        status: vi.fn().mockReturnThis()
-      } as unknown as Response;
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('Login successful');
+      expect(response.body.user.username).toBe('testuser');
 
-      // Create test user
-      await db.insert(users).values({
-        username: 'testuser',
-        password: await hashPassword('password123'),
-        dailyBudgetAmount: "50.00",
-      });
+      // Should set session cookie
+      expect(response.headers['set-cookie']).toBeDefined();
 
-      // Mock passport authenticate
-      const authenticate = vi.fn((strategy, cb) => {
-        return async (req: Request, res: Response) => {
-          const [user] = await db
-            .select()
-            .from(users)
-            .where(eq(users.username, req.body.username))
-            .limit(1);
-          cb(null, user, { message: 'Success' });
-        };
-      });
+      // Should set refresh token cookie
+      const cookies = response.headers['set-cookie'].join(';');
+      expect(cookies).toContain('refreshToken');
+    });
 
-      // Test login endpoint
-      await new Promise<void>((resolve) => {
-        authenticate('local', (err: any, user: any, info: any) => {
-          mockReq.logIn(user, () => {
-            mockRes.json({ message: 'Login successful', user });
-            resolve();
-          });
-        })(mockReq, mockRes);
-      });
+    it('should reject login with incorrect password', async () => {
+      const response = await request
+        .post('/api/login')
+        .send({
+          username: 'testuser',
+          password: 'wrongpassword'
+        });
 
-      expect(mockReq.logIn).toHaveBeenCalled();
-      expect(mockRes.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: 'Login successful',
-          user: expect.objectContaining({
-            username: 'testuser'
-          })
-        })
-      );
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Incorrect password.');
+    });
+
+    it('should reject login with non-existent username', async () => {
+      const response = await request
+        .post('/api/login')
+        .send({
+          username: 'nonexistent',
+          password: 'password123'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Incorrect username.');
+    });
+  });
+
+  describe('Session & Token Management', () => {
+    let authCookie: string;
+    let refreshToken: string;
+
+    beforeEach(async () => {
+      // Create and login user
+      await request
+        .post('/api/register')
+        .send({
+          username: 'testuser',
+          password: 'password123',
+          dailyBudgetAmount: "50.00"
+        });
+
+      const loginResponse = await request
+        .post('/api/login')
+        .send({
+          username: 'testuser',
+          password: 'password123'
+        });
+
+      authCookie = loginResponse.headers['set-cookie'][0];
+      refreshToken = loginResponse.headers['set-cookie']
+        .find((cookie: string) => cookie.startsWith('refreshToken='))
+        ?.split(';')[0]
+        .split('=')[1];
+    });
+
+    it('should allow access to protected routes with valid session', async () => {
+      const response = await request
+        .get('/api/user')
+        .set('Cookie', authCookie);
+
+      expect(response.status).toBe(200);
+      expect(response.body.username).toBe('testuser');
+    });
+
+    it('should deny access to protected routes without session', async () => {
+      const response = await request.get('/api/user');
+      expect(response.status).toBe(401);
+    });
+
+    it('should refresh token successfully', async () => {
+      const response = await request
+        .post('/api/refresh-token')
+        .set('Cookie', `refreshToken=${refreshToken}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('Token refreshed successfully');
+      expect(response.headers['set-cookie']).toBeDefined();
+
+      // Verify new refresh token cookie is set
+      const cookies = response.headers['set-cookie'].join(';');
+      expect(cookies).toContain('refreshToken');
+      expect(cookies).not.toContain(refreshToken); // Should be different token
+    });
+
+    it('should handle invalid refresh tokens', async () => {
+      const response = await request
+        .post('/api/refresh-token')
+        .set('Cookie', 'refreshToken=invalid_token');
+
+      expect(response.status).toBe(401);
+    });
+  });
+
+  describe('Logout', () => {
+    let authCookie: string;
+    let refreshToken: string;
+
+    beforeEach(async () => {
+      // Create and login user
+      await request
+        .post('/api/register')
+        .send({
+          username: 'testuser',
+          password: 'password123',
+          dailyBudgetAmount: "50.00"
+        });
+
+      const loginResponse = await request
+        .post('/api/login')
+        .send({
+          username: 'testuser',
+          password: 'password123'
+        });
+
+      authCookie = loginResponse.headers['set-cookie'][0];
+      refreshToken = loginResponse.headers['set-cookie']
+        .find((cookie: string) => cookie.startsWith('refreshToken='))
+        ?.split(';')[0]
+        .split('=')[1];
+    });
+
+    it('should successfully logout and clear sessions', async () => {
+      const response = await request
+        .post('/api/logout')
+        .set('Cookie', [authCookie, `refreshToken=${refreshToken}`]);
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('Logged out successfully');
+
+      // Verify cookies are cleared
+      const cookies = response.headers['set-cookie'];
+      expect(cookies.some((c: string) => c.includes('refreshToken=;'))).toBe(true);
+
+      // Verify refresh token is revoked
+      const [token] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, 'testuser'))
+        .limit(1);
+
+      expect(token?.revokedAt).not.toBeNull();
+    });
+
+    it('should prevent access after logout', async () => {
+      // First logout
+      await request
+        .post('/api/logout')
+        .set('Cookie', [authCookie, `refreshToken=${refreshToken}`]);
+
+      // Try to access protected route
+      const response = await request
+        .get('/api/user')
+        .set('Cookie', authCookie);
+
+      expect(response.status).toBe(401);
     });
   });
 });
