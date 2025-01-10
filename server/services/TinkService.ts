@@ -1,4 +1,3 @@
-import {  } from '@tink/api';
 import { AppError } from '../domain/errors/AppError';
 
 class TinkService {
@@ -82,7 +81,14 @@ class TinkService {
         throw new Error(`Failed to create authorization link: ${error}`);
       }
 
-      return response.json();
+      const data = await response.json();
+
+      // Validate the response structure
+      if (!data.id || !data.code) {
+        throw new Error('Invalid authorization link response structure');
+      }
+
+      return data;
     } catch (error: any) {
       console.error('Error creating Tink authorization link:', error);
       throw AppError.internal('Failed to create bank link');

@@ -1,6 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import type { DailyBudgetStatus } from "@db/schema";
+
+export interface DailyBudgetStatus {
+  dailyBudget: number;
+  available: number;
+  spent: number;
+  saved: number;
+  rollover: number;
+  plannedExpenses: number;
+}
 
 export function useBudget() {
   const { toast } = useToast();

@@ -1,9 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useTransactions } from "@/hooks/use-transactions";
-import { Loader2 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { useBudget } from "@/hooks/use-budget";
+import { Loader2, TrendingUp, TrendingDown, Wallet } from "lucide-react";
 
 export default function BudgetDisplay() {
-  const { dailyBudget, isLoading } = useTransactions();
+  const { budgetStatus, isLoading } = useBudget();
 
   if (isLoading) {
     return (
@@ -15,31 +16,58 @@ export default function BudgetDisplay() {
     );
   }
 
+  const spentPercentage = budgetStatus ? (budgetStatus.spent / budgetStatus.dailyBudget) * 100 : 0;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Today's Budget</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="flex justify-between items-center">
-            <span className="text-sm text-muted-foreground">Available</span>
+            <span className="text-sm text-muted-foreground flex items-center gap-2">
+              <Wallet className="h-4 w-4" />
+              Available
+            </span>
             <span className="text-3xl font-bold">
-              ${dailyBudget?.available.toFixed(2)}
+              ${budgetStatus?.available.toFixed(2)}
             </span>
           </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-muted-foreground">Spent Today</span>
-            <span className="text-lg text-destructive">
-              ${dailyBudget?.spent.toFixed(2)}
-            </span>
+
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm text-muted-foreground flex items-center gap-2">
+                <TrendingDown className="h-4 w-4 text-destructive" />
+                Spent Today
+              </span>
+              <span className="text-lg text-destructive">
+                ${budgetStatus?.spent.toFixed(2)}
+              </span>
+            </div>
+            <Progress value={spentPercentage} className="h-2" />
           </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-muted-foreground">Saved</span>
+
+          <div className="flex justify-between items-center pt-2 border-t">
+            <span className="text-sm text-muted-foreground flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-green-600" />
+              Saved
+            </span>
             <span className="text-lg text-green-600">
-              ${dailyBudget?.saved.toFixed(2)}
+              ${budgetStatus?.saved.toFixed(2)}
             </span>
           </div>
+
+          {budgetStatus?.rollover > 0 && (
+            <div className="flex justify-between items-center pt-2 border-t">
+              <span className="text-sm text-muted-foreground">
+                Rollover from Previous Days
+              </span>
+              <span className="text-lg text-blue-600">
+                ${budgetStatus.rollover.toFixed(2)}
+              </span>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
