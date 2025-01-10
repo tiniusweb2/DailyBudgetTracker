@@ -2,29 +2,27 @@ import {  } from '@tink/api';
 import { AppError } from '../domain/errors/AppError';
 
 class TinkService {
-  private client: TinkApi;
+  private CLIENT_ID: string;
+  private CLIENT_SECRET: string;
   private accessToken: string | null = null;
+  private tokenExpiration: Date | null = null;
 
   constructor() {
-    this.client = new TinkApi({
-      basePath: process.env.TINK_API_URL || 'https://api.tink.com',
-      baseOptions: {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    });
+    // Initialize with verified credentials
+    this.CLIENT_ID = 'f14b63cedeeb4828aebe67decc474eb7';
+    this.CLIENT_SECRET = 'bb8b8c6a740248d2b53ea3c8a2d4af90';
   }
 
   private async getAccessToken(): Promise<string> {
-    if (this.accessToken) {
+    // Return existing token if it's still valid (with 5 minutes buffer)
+    if (this.accessToken && this.tokenExpiration && this.tokenExpiration.getTime() - Date.now() > 300000) {
       return this.accessToken;
     }
 
     try {
       const params = new URLSearchParams({
-        client_id: process.env.TINK_CLIENT_ID!,
-        client_secret: process.env.TINK_CLIENT_SECRET!,
+        client_id: this.CLIENT_ID,
+        client_secret: this.CLIENT_SECRET,
         grant_type: 'client_credentials',
         scope: 'authorization:read,authorization:grant'
       });
@@ -44,6 +42,7 @@ class TinkService {
 
       const data = await response.json();
       this.accessToken = data.access_token;
+      this.tokenExpiration = new Date(Date.now() + (data.expires_in * 1000));
       return this.accessToken;
     } catch (error: any) {
       console.error('Error getting Tink access token:', error);
