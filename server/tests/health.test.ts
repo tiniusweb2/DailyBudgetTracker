@@ -32,6 +32,24 @@ describe('Server Health', () => {
       const result = await db.execute(sql`SELECT 1 as test`);
       expect(result).toBeDefined();
     });
+
+    it('should handle database errors gracefully', async () => {
+      try {
+        await db.execute(sql`SELECT * FROM non_existent_table`);
+        fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error.message).toContain('relation "non_existent_table" does not exist');
+      }
+    });
+
+    it('should maintain connection pool', async () => {
+      const promises = Array(5).fill(0).map(() => 
+        db.execute(sql`SELECT 1`)
+      );
+      const results = await Promise.all(promises);
+      expect(results).toHaveLength(5);
+      results.forEach(result => expect(result).toBeDefined());
+    });
   });
 
   describe('Environment Variables', () => {
@@ -42,7 +60,10 @@ describe('Server Health', () => {
         'PGPORT',
         'PGUSER',
         'PGPASSWORD',
-        'PGDATABASE'
+        'PGDATABASE',
+        'PLAID_CLIENT_ID',
+        'PLAID_SECRET',
+        'PLAID_ENV'
       ];
 
       requiredEnvVars.forEach(envVar => {
@@ -54,6 +75,11 @@ describe('Server Health', () => {
     it('should have valid PostgreSQL connection string', () => {
       const dbUrl = process.env.DATABASE_URL;
       expect(dbUrl).toMatch(/^postgres(ql)?:\/\/.+:.+@.+:\d+\/.+$/);
+    });
+
+    it('should have valid Plaid environment', () => {
+      const validEnvs = ['sandbox', 'development', 'production'];
+      expect(validEnvs).toContain(process.env.PLAID_ENV);
     });
   });
 
@@ -73,6 +99,14 @@ describe('Server Health', () => {
         .expect(404);
 
       expect(response.body).toBeDefined();
+    });
+
+    it('should include CORS headers in development', async () => {
+      const response = await request(app)
+        .get('/api/health')
+        .expect(200);
+
+      expect(response.headers['access-control-allow-origin']).toBeDefined();
     });
   });
 
@@ -99,6 +133,14 @@ describe('Server Health', () => {
         .length;
 
       expect(sessionMiddleware).toBeGreaterThan(0);
+    });
+
+    it('should have request logging middleware', () => {
+      const logMiddleware = app._router.stack
+        .filter((layer: any) => layer.route?.path === '/api/*')
+        .length;
+
+      expect(logMiddleware).toBeGreaterThan(0);
     });
   });
 });

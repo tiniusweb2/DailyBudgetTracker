@@ -51,13 +51,24 @@ app.use((req, res, next) => {
   next();
 });
 
-// Error handling middleware
+// Global error handling middleware
 const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Server Error:', err);
   const status = (err as any).status || (err as any).statusCode || 500;
   const message = err.message || "Internal Server Error";
   res.status(status).json({ message });
 };
+
+// Handle uncaught promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
 
 // Initialize server with error handling
 (async () => {
@@ -92,6 +103,18 @@ const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunct
     server.listen(PORT, "0.0.0.0", () => {
       log(`Server started on port ${PORT}`);
     });
+
+    // Add graceful shutdown
+    const shutdown = () => {
+      console.log('Shutting down gracefully...');
+      server.close(() => {
+        console.log('Server closed');
+        process.exit(0);
+      });
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
 
   } catch (error) {
     console.error('Failed to start server:', error);
