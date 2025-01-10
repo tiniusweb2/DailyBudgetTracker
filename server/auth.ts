@@ -17,7 +17,7 @@ declare global {
     interface User {
       id: number;
       username: string;
-      dailyBudgetAmount: number;
+      dailyBudgetAmount: string;
       createdAt: Date;
     }
   }
@@ -34,27 +34,13 @@ export async function comparePasswords(
   storedPassword: string
 ): Promise<boolean> {
   try {
-    // Validate stored password format
-    if (!storedPassword || !storedPassword.includes('.')) {
-      console.error('Invalid stored password format');
-      return false;
-    }
-
     const [hashedPassword, salt] = storedPassword.split(".");
-
-    // Validate both parts exist
-    if (!hashedPassword || !salt) {
-      console.error('Missing hash or salt component');
-      return false;
-    }
-
     const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
     const suppliedPasswordBuf = (await scryptAsync(
       suppliedPassword,
       salt,
       64
     )) as Buffer;
-
     return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
   } catch (error) {
     console.error('Error comparing passwords:', error);
@@ -106,13 +92,7 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "Incorrect password." });
         }
 
-        // Convert dailyBudgetAmount from string to number for the session
-        const userWithNumberAmount = {
-          ...user,
-          dailyBudgetAmount: Number(user.dailyBudgetAmount)
-        };
-
-        return done(null, userWithNumberAmount);
+        return done(null, user);
       } catch (err) {
         return done(err);
       }
@@ -135,13 +115,7 @@ export function setupAuth(app: Express) {
         return done(null, false);
       }
 
-      // Convert dailyBudgetAmount from string to number for the session
-      const userWithNumberAmount = {
-        ...user,
-        dailyBudgetAmount: Number(user.dailyBudgetAmount)
-      };
-
-      done(null, userWithNumberAmount);
+      done(null, user);
     } catch (err) {
       done(err);
     }
@@ -175,19 +149,13 @@ export function setupAuth(app: Express) {
         })
         .returning();
 
-      // Convert dailyBudgetAmount from string to number for the session
-      const userWithNumberAmount = {
-        ...user,
-        dailyBudgetAmount: Number(user.dailyBudgetAmount)
-      };
-
-      req.logIn(userWithNumberAmount, (err) => {
+      req.logIn(user, (err) => {
         if (err) {
           return next(err);
         }
         return res.json({
           message: "Registration successful",
-          user: userWithNumberAmount
+          user
         });
       });
     } catch (error) {
@@ -201,7 +169,7 @@ export function setupAuth(app: Express) {
         return next(err);
       }
       if (!user) {
-        return res.status(400).json({ error: info.message || "Login failed" });
+        return res.status(400).json({ message: info.message || "Login failed" });
       }
       req.logIn(user, (err) => {
         if (err) {
@@ -218,7 +186,7 @@ export function setupAuth(app: Express) {
   app.post("/api/logout", (req, res) => {
     req.logout((err) => {
       if (err) {
-        return res.status(500).json({ error: "Logout failed" });
+        return res.status(500).json({ message: "Logout failed" });
       }
       res.json({ message: "Logged out successfully" });
     });
