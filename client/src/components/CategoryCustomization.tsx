@@ -13,7 +13,6 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -120,7 +119,8 @@ export default function CategoryCustomization() {
   // Helper function to render icon component
   const renderIcon = (iconName: string) => {
     const Icon = LucideIcons[iconName as keyof typeof LucideIcons] as React.ComponentType<{ className?: string }>;
-    return Icon ? <Icon className="h-4 w-4" /> : <Activity className="h-4 w-4" />;
+    if (!Icon) return <Activity className="h-4 w-4" />;
+    return <Icon className="h-4 w-4" />;
   };
 
   return (
@@ -192,7 +192,7 @@ export default function CategoryCustomization() {
                             <SelectValue>
                               <div className="flex items-center gap-2">
                                 {renderIcon(field.value)}
-                                <span>{field.value}</span>
+                                {field.value}
                               </div>
                             </SelectValue>
                           </SelectTrigger>
@@ -202,7 +202,7 @@ export default function CategoryCustomization() {
                             <SelectItem key={icon} value={icon}>
                               <div className="flex items-center gap-2">
                                 {renderIcon(icon)}
-                                <span>{icon}</span>
+                                {icon}
                               </div>
                             </SelectItem>
                           ))}
